@@ -177,7 +177,7 @@ async def main():
         for article in articles:
             # Проверка дубликатов в базе - ИСПРАВЛЕНО
             exists = SUPABASE.table("news_articles").select("id").eq("url", article["url"]).execute()
-            if exists.data:  # ИСПРАВЛЕНО: добавлено .data
+            if exists.data:  # Правильная проверка наличия данных
                 logger.info(f"♻️ Дубликат: {article['url']}")
                 continue
             
