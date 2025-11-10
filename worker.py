@@ -175,9 +175,10 @@ async def main():
         articles = await get_articles()
         
         for article in articles:
-            # Проверка дубликатов в базе
+            # Проверка дубликатов в базе - ИСПРАВЛЕНО
             exists = SUPABASE.table("news_articles").select("id").eq("url", article["url"]).execute()
-            if exists.
+            if exists.data:  # ИСПРАВЛЕНО: добавлено .data
+                logger.info(f"♻️ Дубликат: {article['url']}")
                 continue
             
             # Определение категории
@@ -185,7 +186,7 @@ async def main():
             if not category:
                 continue
             
-            # Отправка сообщения БЕЗ ХЕШТЕГА
+            # Отправка сообщения
             await send_to_telegram(article, category)
             
             # Сохранение в базу
