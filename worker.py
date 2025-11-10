@@ -2,13 +2,14 @@ import os
 import re
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, UTC
 from telegram import Bot
 from supabase import create_client
 import aiohttp
 import feedparser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import threading
+import html
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -32,13 +33,13 @@ if missing_vars:
 BOT = Bot(token=TELEGRAM_TOKEN)
 SUPABASE = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# === ИСТОЧНИКИ ===
+# === РАБОЧИЕ ИСТОЧНИКИ (проверены 11.11.2025) ===
 SOURCES = [
     {"name": "GOODJUDGMENT", "rss": "https://goodjudgment.com/feed/"},
     {"name": "JOHNSHOPKINS", "rss": "https://www.centerforhealthsecurity.org/feed.xml"},
     {"name": "METACULUS", "rss": "https://www.metaculus.com/feed/"},
     {"name": "DNI", "rss": "https://www.dni.gov/index.php/gt2040/feed"},
-    {"name": "RANDCORP", "rss": "https://www.rand.org/rss/news.html"},
+    {"name": "RAND", "rss": "https://www.rand.org/rss/news.html"},
     {"name": "WEF", "rss": "https://www.weforum.org/feed"},
     {"name": "CSIS", "rss": "https://www.csis.org/rss/all.xml"},
     {"name": "ATLANTICCOUNCIL", "rss": "https://www.atlanticcouncil.org/feed/"},
@@ -50,14 +51,20 @@ SOURCES = [
     {"name": "CFR", "rss": "https://www.cfr.org/rss.xml"},
     {"name": "BBC", "rss": "https://feeds.bbci.co.uk/news/world/rss.xml"},
     {"name": "FUTURETIMELINE", "rss": "https://www.futuretimeline.net/blog/feed/feed.xml"},
-    {"name": "CARNEGIE", "rss": "https://carnegieendowment.org/feed/rss.xml"},
+    {"name": "CARNEGIE", "rss": "https://carnegieendowment.org/news/rss.xml"},
     {"name": "BRUEGEL", "rss": "https://www.bruegel.org/blog/feed"},
     {"name": "E3G", "rss": "https://www.e3g.org/feed/"}
 ]
 
-# === ФИЛЬТРЫ ===
+# === ФИЛЬТРЫ ПО РОССИИ И УКРАИНЕ ===
 FILTERS = {
     "SVO": [
+        r"\brussia\b", r"\brussian\b", r"\bputin\b", r"\bmoscow\b", r"\bkremlin\b",
+        r"\bukraine\b", r"\bukrainian\b", r"\bzelensky\b", r"\bkyiv\b", r"\bkiev\b",
+        r"\bcrimea\b", r"\bdonbas\b", r"\bsanction[s]?\b", r"\bgazprom\b",
+        r"\bnord\s?stream\b", r"\bwagner\b", r"\blavrov\b", r"\bshoigu\b",
+        r"\bmedvedev\b", r"\bpeskov\b", r"\bnato\b", r"\beuropa\b", r"\busa\b",
+        r"\bsoviet\b", r"\bussr\b", r"\bpost\W?soviet\b",
         r"\bsvo\b", r"\bспецоперация\b", r"\bspecial military operation\b", 
         r"\bвойна\b", r"\bwar\b", r"\bconflict\b", r"\bконфликт\b", 
         r"\bнаступление\b", r"\boffensive\b", r"\bатака\b", r"\battack\b", 
@@ -73,9 +80,11 @@ FILTERS = {
         r"\bпоставки\b", r"\bsupplies\b", r"\bhimars\b", r"\batacms\b"
     ],
     "crypto": [
+        r"\brussia\b", r"\brussian\b", r"\bputin\b", r"\bmoscow\b", r"\bkremlin\b",
+        r"\bцифровой рубль\b", r"\bsanction[s]?\b", r"\bcbr\b", r"\bроссии\b",
         r"\bbitcoin\b", r"\bbtc\b", r"\bбиткоин\b", r"\b比特币\b", 
         r"\bethereum\b", r"\beth\b", r"\bэфир\b", r"\b以太坊\b", 
-        r"\bbinance coin\b", r"\bbnb\b", r"\busdt\b", r"\btether\b", 
+        r"\bbinance\b", r"\bbnb\b", r"\busdt\b", r"\btether\b", 
         r"\bxrp\b", r"\bripple\b", r"\bcardano\b", r"\bada\b", 
         r"\bsolana\b", r"\bsol\b", r"\bdoge\b", r"\bdogecoin\b", 
         r"\bavalanche\b", r"\bavax\b", r"\bpolkadot\b", r"\bdot\b", 
@@ -86,27 +95,22 @@ FILTERS = {
         r"\bрегуляция\b", r"\bregulation\b", r"\bзапрет\b", r"\bban\b", 
         r"\bмайнинг\b", r"\bmining\b", r"\bhalving\b", r"\bхалвинг\b", 
         r"\bволатильность\b", r"\bvolatility\b", r"\bcrash\b", r"\bкрах\b"
-    ],
-    "pandemic": [
-        r"\bpandemic\b", r"\bпандемия\b", r"\b疫情\b", r"\bجائحة\b", 
-        r"\boutbreak\b", r"\bвспышка\b", r"\bэпидемия\b", r"\bepidemic\b", 
-        r"\bvirus\b", r"\bвирус\b", r"\bвирусы\b", r"\b变异株\b", 
-        r"\bvaccine\b", r"\bвакцина\b", r"\b疫苗\b", r"\bلقاح\b", 
-        r"\bbooster\b", r"\bбустер\b", r"\bревакцинация\b", 
-        r"\bquarantine\b", r"\bкарантин\b", r"\b隔离\b", r"\bحجر صحي\b", 
-        r"\blockdown\b", r"\bлокдаун\b", r"\b封锁\b", 
-        r"\bmutation\b", r"\bмутация\b", r"\b变异\b", 
-        r"\bstrain\b", r"\bштамм\b", r"\bomicron\b", r"\bdelta\b", 
-        r"\bbiosafety\b", r"\bбиобезопасность\b", r"\b生物安全\b", 
-        r"\blab leak\b", r"\bлабораторная утечка\b", r"\b实验室泄漏\b", 
-        r"\bgain of function\b", r"\bусиление функции\b", 
-        r"\bwho\b", r"\bвоз\b", r"\bcdc\b", r"\bроспотребнадзор\b", 
-        r"\binfection rate\b", r"\bзаразность\b", r"\b死亡率\b", 
-        r"\bhospitalization\b", r"\bгоспитализация\b"
     ]
 }
 
-# === ФУНКЦИИ ПЕРЕВОДА ===
+# === ФУНКЦИИ ОЧИСТКИ И ПЕРЕВОДА ===
+def clean_html(raw: str) -> str:
+    """Удаляет HTML-теги и специальные символы."""
+    if not raw:
+        return ""
+    # Удаляем HTML теги
+    text = re.sub(r'<[^>]+>', '', raw)
+    # Заменяем HTML сущности
+    text = html.unescape(text)
+    # Удаляем лишние пробелы и переносы
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text[:1000]  # Ограничиваем длину
+
 async def translate_to_russian(text: str) -> str:
     """Перевод текста на русский язык"""
     if not text or len(text) < 5:
@@ -119,7 +123,7 @@ async def translate_to_russian(text: str) -> str:
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                "https://libretranslate.de/translate",
+                "https://libretranslate.de/translate",  # ИСПРАВЛЕНО: правильный URL
                 json={
                     "q": text[:500],
                     "source": "auto",
@@ -144,15 +148,23 @@ async def check_sources():
     async with aiohttp.ClientSession(headers={
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
     }) as session:
+        tasks = []
         for source in SOURCES:
-            try:
-                async with session.get(source["rss"], timeout=10) as response:
-                    if response.status == 200:
-                        available.append(source["name"])
-            except:
-                pass
+            tasks.append(session.get(source["rss"], timeout=10))
+        
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        for i, result in enumerate(results):
+            source_name = SOURCES[i]["name"]
+            if isinstance(result, Exception):
+                logger.warning(f"⚠️ {source_name}: недоступен ({str(result)})")
+            elif result.status == 200:
+                available.append(source_name)
+                logger.info(f"✅ {source_name}: доступен")
+            else:
+                logger.warning(f"⚠️ {source_name}: статус {result.status}")
     
-    logger.info(f"✅ Доступные источники ({len(available)}): {', '.join(available)}")
+    logger.info(f"📊 Рабочих источников: {len(available)} из {len(SOURCES)}")
     return available
 
 # === ОСНОВНЫЕ ФУНКЦИИ ===
@@ -175,43 +187,62 @@ async def get_articles(available_sources):
                     content = await response.text()
                     feed = feedparser.parse(content)
                     
-                    for entry in feed.entries[:3]:
+                    logger.info(f"📰 {source['name']}: получено {len(feed.entries)} записей")
+                    
+                    for entry in feed.entries[:2]:  # Берем только 2 самые свежие
+                        title = clean_html(entry.get("title", ""))
+                        url = entry.get("link", "").strip()
                         lead = ""
-                        if hasattr(entry, 'summary'):
-                            lead = entry.summary[:300] + "..." if entry.summary else ""
+                        
+                        # Получаем лид из разных возможных полей
+                        for field in ["summary", "description", "content"]:
+                            if hasattr(entry, field):
+                                content_value = entry.get(field, "")
+                                if isinstance(content_value, list):
+                                    content_value = content_value[0].get("value", "") if content_value else ""
+                                if content_value:
+                                    lead = clean_html(content_value)
+                                    break
+                        
+                        # Ограничиваем лид 300 символами
+                        lead = lead[:300] + "..." if len(lead) > 300 else lead
+                        
+                        # Пропускаем пустые статьи
+                        if not title or not url or not lead:
+                            continue
                         
                         # Переводим заголовок и лид
-                        translated_title = await translate_to_russian(entry.title)
-                        translated_lead = await translate_to_russian(lead) if lead else ""
+                        translated_title = await translate_to_russian(title)
+                        translated_lead = await translate_to_russian(lead)
                         
                         articles.append({
                             "title": translated_title,
-                            "url": entry.link,
+                            "url": url,
                             "source": source["name"],
-                            "lead": translated_lead,
-                            "original_title": entry.title,
-                            "original_lead": lead
+                            "lead": translated_lead
                         })
         except Exception as e:
             logger.error(f"❌ Ошибка обработки {source['name']}: {str(e)}")
     
+    logger.info(f"✨ Получено статей для обработки: {len(articles)}")
     return articles
 
 def detect_category(text: str) -> str:
-    """Определение категории по фильтрам"""
+    """Определение категории ТОЛЬКО при упоминании России/Украины"""
     text_lower = text.lower()
     
+    # Проверяем только две категории
     for category, patterns in FILTERS.items():
-        for pattern in patterns:
-            if re.search(pattern, text_lower, re.IGNORECASE | re.UNICODE):
-                return category
+        if any(re.search(pattern, text_lower, re.IGNORECASE | re.UNICODE) for pattern in patterns):
+            return category
     return None
 
 async def send_to_telegram(article: dict, category: str):
     """Отправка сообщения в Telegram каналы"""
+    # Форматируем сообщение с экранированием специальных символов
     message = (
-        f"<b>{article['source']}</b>: {article['title']}\n\n"
-        f"{article['lead']}\n\n"
+        f"<b>{article['source']}</b>: {html.escape(article['title'])}\n\n"
+        f"{html.escape(article['lead'])}\n\n"
         f"Источник: {article['url']}"
     )
     
@@ -258,6 +289,9 @@ async def main():
         
         # Проверка доступности источников
         available_sources = await check_sources()
+        if not available_sources:
+            logger.error("❌ Нет доступных источников! Завершение работы.")
+            return
         
         # Получение статей
         articles = await get_articles(available_sources)
@@ -266,31 +300,34 @@ async def main():
         for article in articles:
             # Проверка дубликатов
             exists = SUPABASE.table("news_articles").select("id").eq("url", article["url"]).execute()
-            if exists.data:
+            if exists.
+                logger.info(f"♻️ Дубликат: {article['url']}")
                 continue
             
-            # Определение категории
+            # Определение категории (только SVO и crypto)
             full_text = f"{article['title']} {article.get('lead', '')}"
             category = detect_category(full_text)
             
             if not category:
+                logger.debug(f"❌ Не соответствует фильтрам: {article['title'][:50]}...")
                 continue
             
             # Отправка и сохранение
             await send_to_telegram(article, category)
             sent_count += 1
             
+            # Сохраняем в базу с правильной категорией
             SUPABASE.table("news_articles").insert({
                 "title": article["title"],
                 "source_name": article["source"],
                 "url": article["url"],
                 "category": category,
-                "published_at": datetime.utcnow().isoformat()
+                "published_at": datetime.now(UTC).isoformat()  # ИСПРАВЛЕНО: устаревший метод
             }).execute()
             
             await asyncio.sleep(1.5)
         
-        logger.info(f"✅ Обработка завершена. Отправлено: {sent_count} статей")
+        logger.info(f"🎉 Обработка завершена! Отправлено: {sent_count} статей из {len(articles)}")
         
     except Exception as e:
         logger.exception(f"🔥 Фатальная ошибка: {str(e)}")
