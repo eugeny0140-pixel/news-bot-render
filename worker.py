@@ -4,6 +4,7 @@ import logging
 import re
 import feedparser
 import requests
+import html  # Добавлен для декодирования HTML-сущностей
 from deep_translator import GoogleTranslator, MyMemoryTranslator
 from supabase import create_client
 
@@ -40,81 +41,37 @@ except Exception as e:
     exit(1)
 
 # === Источники (с короткими префиксами) ===
+# Убраны Bruegel и Carnegie из-за ошибок
 SOURCES = [
     {"name": "E3G", "rss": "https://www.e3g.org/feed/"},
     {"name": "Foreign Affairs", "rss": "https://www.foreignaffairs.com/rss.xml"},
     {"name": "Reuters Institute", "rss": "https://reutersinstitute.politics.ox.ac.uk/feed"},
-    {"name": "Bruegel", "rss": "https://www.bruegel.org/rss"},
+    # {"name": "Bruegel", "rss": "https://www.bruegel.org/rss"}, # Закомментирован из-за защиты
     {"name": "Chatham House", "rss": "https://www.chathamhouse.org/feed"},
     {"name": "CSIS", "rss": "https://www.csis.org/rss.xml"},
     {"name": "Atlantic Council", "rss": "https://www.atlanticcouncil.org/feed/"},
     {"name": "RAND", "rss": "https://www.rand.org/rss/recent.xml"},
     {"name": "CFR", "rss": "https://www.cfr.org/rss.xml"},
-    {"name": "Carnegie", "rss": "https://carnegieendowment.org/rss"},
+    # {"name": "Carnegie", "rss": "https://carnegieendowment.org/rss"}, # Закомментирован из-за 404
     {"name": "ECONOMIST", "rss": "https://www.economist.com/rss/the_world_this_week_rss.xml"},
     {"name": "BLOOMBERG", "rss": "https://www.bloomberg.com/politics/feeds/site.xml"},
+    # Добавленные источники
+    {"name": "BBC Future", "rss": "http://feeds.bbci.co.uk/news/science_and_environment/rss.xml"},
+    {"name": "Future Timeline", "rss": "http://futuretimeline.net/blog.rss"},
 ]
-
-KEYWORDS = {
-    r"\brussia\b", r"\brussian\b", r"\bputin\b", r"\bmoscow\b", r"\bkremlin\b",
-    r"\bukraine\b", r"\bukrainian\b", r"\bzelensky\b", r"\bkyiv\b", r"\bkiev\b",
-    r"\bcrimea\b", r"\bdonbas\b", r"\bsanction[s]?\b", r"\bgazprom\b",
-    r"\bnord\s?stream\b", r"\bwagner\b", r"\blavrov\b", r"\bshoigu\b",
-    r"\bmedvedev\b", r"\bpeskov\b", r"\bnato\b", r"\beuropa\b", r"\busa\b",
-    r"\bsoviet\b", r"\bussr\b", r"\bpost\W?soviet\b",
-    # === СВО и Война ===
-    r"\bsvo\b", r"\bспецоперация\b", r"\bspecial military operation\b",
-    r"\bвойна\b", r"\bwar\b", r"\bconflict\b", r"\bконфликт\b",
-    r"\bнаступление\b", r"\boffensive\b", r"\bатака\b", r"\battack\b",
-    r"\bудар\b", r"\bstrike\b", r"\bобстрел\b", r"\bshelling\b",
-    r"\bдрон\b", r"\bdrone\b", r"\bmissile\b", r"\bракета\b",
-    r"\bэскалация\b", r"\bescalation\b", r"\bмобилизация\b", r"\bmobilization\b",
-    r"\bфронт\b", r"\bfrontline\b", r"\bзахват\b", r"\bcapture\b",
-    r"\bосвобождение\b", r"\bliberation\b", r"\bбой\b", r"\bbattle\b",
-    r"\bпотери\b", r"\bcasualties\b", r"\bпогиб\b", r"\bkilled\b",
-    r"\bранен\b", r"\binjured\b", r"\bпленный\b", r"\bprisoner of war\b",
-    r"\bпереговоры\b", r"\btalks\b", r"\bперемирие\b", r"\bceasefire\b",
-    r"\bсанкции\b", r"\bsanctions\b", r"\bоружие\b", r"\bweapons\b",
-    r"\bпоставки\b", r"\bsupplies\b", r"\bhimars\b", r"\batacms\b",
-    r"\bhour ago\b", r"\bчас назад\b", r"\bminutos atrás\b", r"\b小时前\b",
-    # === Криптовалюта (топ-20 + CBDC, DeFi, регуляция) ===
-    r"\bbitcoin\b", r"\bbtc\b", r"\bбиткоин\b", r"\b比特币\b",
-    r"\bethereum\b", r"\beth\b", r"\bэфир\b", r"\b以太坊\b",
-    r"\bbinance coin\b", r"\bbnb\b", r"\busdt\b", r"\btether\b",
-    r"\bxrp\b", r"\bripple\b", r"\bcardano\b", r"\bada\b",
-    r"\bsolana\b", r"\bsol\b", r"\bdoge\b", r"\bdogecoin\b",
-    r"\bavalanche\b", r"\bavax\b", r"\bpolkadot\b", r"\bdot\b",
-    r"\bchainlink\b", r"\blink\b", r"\btron\b", r"\btrx\b",
-    r"\bcbdc\b", r"\bcentral bank digital currency\b", r"\bцифровой рубль\b",
-    r"\bdigital yuan\b", r"\beuro digital\b", r"\bdefi\b", r"\bдецентрализованные финансы\b",
-    r"\bnft\b", r"\bnon-fungible token\b", r"\bsec\b", r"\bцб рф\b",
-    r"\bрегуляция\b", r"\bregulation\b", r"\bзапрет\b", r"\bban\b",
-    r"\bмайнинг\b", r"\bmining\b", r"\bhalving\b", r"\bхалвинг\b",
-    r"\bволатильность\b", r"\bvolatility\b", r"\bcrash\b", r"\bкрах\b",
-    r"\b刚刚\b", r"\bدقائق مضت\b",
-    # === Пандемия и болезни (включая биобезопасность) ===
-    r"\bpandemic\b", r"\bпандемия\b", r"\b疫情\b", r"\bجائحة\b",
-    r"\boutbreak\b", r"\bвспышка\b", r"\bэпидемия\b", r"\bepidemic\b",
-    r"\bvirus\b", r"\bвирус\b", r"\bвирусы\b", r"\b变异株\b",
-    r"\bvaccine\b", r"\bвакцина\b", r"\b疫苗\b", r"\bلقاح\b",
-    r"\bbooster\b", r"\bбустер\b", r"\bревакцинация\b",
-    r"\bquarantine\b", r"\bкарантин\b", r"\b隔离\b", r"\bحجر صحي\b",
-    r"\blockdown\b", r"\bлокдаун\b", r"\b封锁\b",
-    r"\bmutation\b", r"\bмутация\b", r"\b变异\b",
-    r"\bstrain\b", r"\bштамм\b", r"\bomicron\b", r"\bdelta\b",
-    r"\bbiosafety\b", r"\bбиобезопасность\b", r"\b生物安全\b",
-    r"\blab leak\b", r"\bлабораторная утечка\b", r"\b实验室泄漏\b",
-    r"\bgain of function\b", r"\bусиление функции\b",
-    r"\bwho\b", r"\bвоз\b", r"\bcdc\b", r"\bроспотребнадзор\b",
-    r"\binfection rate\b", r"\bзаразность\b", r"\b死亡率\b",
-    r"\bhospitalization\b", r"\bгоспитализация\b",
-    r"\bقبل ساعات\b", r"\b刚刚报告\b"
-}
 
 # === Вспомогательные функции ===
 def clean_html(raw: str) -> str:
-    """Удаляет HTML-теги."""
-    return re.sub(r'<[^>]+>', '', raw)
+    """Удаляет HTML-теги и декодирует HTML-сущности."""
+    if not raw:
+        return ""
+    # Сначала удаляем теги
+    text = re.sub(r'<[^>]+>', '', raw)
+    # Затем декодируем сущности типа &nbsp; -> пробел
+    text = html.unescape(text)
+    # Заменяем множественные пробелы и переносы на один пробел
+    text = re.sub(r'\s+', ' ', text)
+    return text.strip()
 
 def translate(text: str) -> str:
     if not text.strip():
@@ -129,8 +86,48 @@ def translate(text: str) -> str:
             return text
 
 def is_relevant(title: str, desc: str) -> bool:
+    """
+    Проверяет, содержит ли текст (заголовок + описание) хотя бы одно ключевое слово.
+    Использует простой поиск подстроки для надежности.
+    """
     text = (title + " " + desc).lower()
-    return any(kw in text for kw in KEYWORDS)
+    # Простые ключевые слова для поиска (подстроки)
+    keywords = [
+        "russia", "russian", "putin", "moscow", "kremlin",
+        "ukraine", "ukrainian", "zelensky", "kyiv", "kiev",
+        "crimea", "donbas", "sanction", "gazprom",
+        "nord stream", "wagner", "lavrov", "shoigu",
+        "medvedev", "peskov", "nato", "europa", "usa",
+        "soviet", "ussr", "post-soviet",
+        # СВО
+        "svo", "спецоперация", "special military operation",
+        "война", "war", "conflict", "конфликт",
+        "наступление", "offensive", "атака", "attack",
+        "удар", "strike", "обстрел", "shelling",
+        "дрон", "drone", "missile", "ракета",
+        "эскалация", "escalation", "мобилизация", "mobilization",
+        "фронт", "frontline", "захват", "capture",
+        "освобождение", "liberation", "бой", "battle",
+        "потери", "casualties", "погиб", "killed",
+        "ранен", "injured", "пленный", "prisoner of war",
+        "переговоры", "talks", "перемирие", "ceasefire",
+        "санкции", "sanctions", "оружие", "weapons",
+        "поставки", "supplies", "himars", "atacms",
+        # Криптовалюта
+        "bitcoin", "btc", "биткоин", "ethereum", "eth",
+        "binance coin", "bnb", "usdt", "tether",
+        "xrp", "ripple", "cardano", "ada",
+        "solana", "sol", "doge", "dogecoin",
+        "avalanche", "avax", "polkadot", "dot",
+        "chainlink", "link", "tron", "trx",
+        "cbdc", "central bank digital currency", "цифровой рубль",
+        "digital yuan", "euro digital", "defi", "децентрализованные финансы",
+        "nft", "non-fungible token", "sec", "цб рф",
+        "регуляция", "regulation", "запрет", "ban",
+        "майнинг", "mining", "halving", "халвинг",
+        "волатильность", "volatility", "crash", "крах",
+    ]
+    return any(kw in text for kw in keywords)
 
 def is_generic(desc: str) -> bool:
     return any(phrase in desc.lower() for phrase in ["appeared first", "read more", "©", "all rights"])
@@ -177,7 +174,12 @@ def fetch_and_process():
     logger.info("📡 Checking feeds...")
     for src in SOURCES:
         try:
+            logger.info(f"Fetching feed from {src['name']} ({src['rss']})")
             feed = feedparser.parse(src["rss"])
+            if not feed.entries:
+                logger.warning(f"Feed from {src['name']} is empty or invalid.")
+                continue
+
             for entry in feed.entries:
                 url = entry.get("link", "").strip()
                 if not url or is_article_sent(url):
@@ -200,8 +202,10 @@ def fetch_and_process():
                 mark_article_sent(url, title)
                 time.sleep(0.5)  # Пауза между отправками
 
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Network error fetching feed from {src['name']}: {e}")
         except Exception as e:
-            logger.error(f"Error on {src['name']}: {e}")
+            logger.error(f"Error processing feed from {src['name']}: {e}")
 
     logger.info("✅ Feed check completed.")
 
@@ -210,5 +214,5 @@ if __name__ == "__main__":
     logger.info("🚀 Starting Russia Monitor Bot (Background Worker)...")
     while True:
         fetch_and_process()
-        logger.info("💤 Sleeping for 10 minutes...")
-        time.sleep(10 * 60)  # Спим 30 минут перед следующей проверкой
+        logger.info("💤 Sleeping for 10 minutes...")  # Изменено на 10 минут
+        time.sleep(10 * 60)  # Спим 10 минут перед следующей проверкой
