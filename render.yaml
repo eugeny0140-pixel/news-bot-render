@@ -16,3 +16,4 @@ services:
         sync: false
       - key: SUPABASE_KEY
         sync: false
+    port: 10000
