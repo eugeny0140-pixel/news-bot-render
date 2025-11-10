@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 # === Настройки ===
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+# Предполагается, что CHANNEL_ID1 содержит ID каналов через запятую
 CHANNEL_IDS = [cid.strip() for cid in os.getenv("CHANNEL_ID1", "").split(",") if cid.strip()]
 if os.getenv("CHANNEL_ID2"):
     CHANNEL_IDS.extend([cid.strip() for cid in os.getenv("CHANNEL_ID2").split(",") if cid.strip()])
@@ -34,30 +35,28 @@ for var in ["TELEGRAM_BOT_TOKEN", "CHANNEL_ID1", "SUPABASE_URL", "SUPABASE_KEY"]
 # === Подключение к Supabase ===
 try:
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    # Простая проверка подключения
     supabase.table("published_articles").select("url").limit(1).execute()
     logger.info("✅ Supabase подключён")
 except Exception as e:
     logger.error(f"❌ Supabase ошибка: {e}")
     exit(1)
 
-# === Источники (с короткими префиксами) ===
-# Убраны Bruegel и Carnegie из-за проблем
+# === Источники (только связанные с темами) ===
+# Убраны Bruegel (защита от ботов) и Carnegie (404)
 SOURCES = [
-    {"name": "E3G", "rss": "https://www.e3g.org/feed/"},
     {"name": "Foreign Affairs", "rss": "https://www.foreignaffairs.com/rss.xml"},
     {"name": "Reuters Institute", "rss": "https://reutersinstitute.politics.ox.ac.uk/feed"},
-    # {"name": "Bruegel", "rss": "https://www.bruegel.org/rss"}, # Закомментирован из-за защиты
     {"name": "Chatham House", "rss": "https://www.chathamhouse.org/feed"},
     {"name": "CSIS", "rss": "https://www.csis.org/rss.xml"},
     {"name": "Atlantic Council", "rss": "https://www.atlanticcouncil.org/feed/"},
     {"name": "RAND", "rss": "https://www.rand.org/rss/recent.xml"},
     {"name": "CFR", "rss": "https://www.cfr.org/rss.xml"},
-    # {"name": "Carnegie", "rss": "https://carnegieendowment.org/rss"}, # Закомментирован из-за 404
     {"name": "ECONOMIST", "rss": "https://www.economist.com/rss/the_world_this_week_rss.xml"},
     {"name": "BLOOMBERG", "rss": "https://www.bloomberg.com/politics/feeds/site.xml"},
     # Добавленные источники
-    {"name": "BBC Future", "rss": "http://feeds.bbci.co.uk/news/science_and_environment/rss.xml"},
-    {"name": "Future Timeline", "rss": "http://futuretimeline.net/blog.rss"},
+    {"name": "BBC Future", "rss": "http://feeds.bbci.co.uk/news/science_and_environment/rss.xml"}, # Криптовалюты могут быть тут
+    {"name": "Future Timeline", "rss": "http://futuretimeline.net/blog.rss"}, # Криптовалюты могут быть тут
 ]
 
 # === Вспомогательные функции ===
@@ -323,6 +322,7 @@ def fetch_and_process():
 
             for entry in feed.entries:
                 url = entry.get("link", "").strip()
+                # Проверяем, была ли статья уже отправлена *до* фильтрации
                 if not url or is_article_sent(url):
                     continue
 
