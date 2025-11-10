@@ -1,19 +1,19 @@
 services:
   - type: worker
-    name: news-bot
+    name: russia-monitor-bot
     env: python
-    plan: free
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "python worker.py"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
     envVars:
-      - key: TELEGRAM_TOKEN
-        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        value: {{ TELEGRAM_BOT_TOKEN }}
       - key: CHANNEL_ID1
-        sync: false
+        value: {{ CHANNEL_ID1 }}
       - key: CHANNEL_ID2
-        sync: false
+        value: {{ CHANNEL_ID2 }}
       - key: SUPABASE_URL
-        sync: false
+        value: {{ SUPABASE_URL }}
       - key: SUPABASE_KEY
-        sync: false
-    port: 10000
+        value: {{ SUPABASE_KEY }}
+    region: frankfurt
+    plan: free
