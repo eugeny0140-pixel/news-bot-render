@@ -1,0 +1,8 @@
+python-telegram-bot
+supabase
+aiohttp
+beautifulsoup4
+feedparser
+python-dateutil
+python-dotenv
+requests
