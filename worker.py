@@ -210,5 +210,5 @@ if __name__ == "__main__":
     logger.info("🚀 Starting Russia Monitor Bot (Background Worker)...")
     while True:
         fetch_and_process()
-        logger.info("💤 Sleeping for 30 minutes...")
-        time.sleep(30 * 60)  # Спим 30 минут перед следующей проверкой
+        logger.info("💤 Sleeping for 10 minutes...")
+        time.sleep(10 * 60)  # Спим 30 минут перед следующей проверкой
