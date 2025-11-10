@@ -1,0 +1,22 @@
+services:
+  - type: worker
+    name: news-bot-worker
+    env: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python main.py"
+    envVars:
+      - key: TELEGRAM_TOKEN
+        sync: false
+      - key: CHANNEL_ID1
+        sync: false
+      - key: CHANNEL_ID2
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+    cron:
+      - id: check-news
+        schedule: "*/30 * * * *"
+        command: "python main.py"
