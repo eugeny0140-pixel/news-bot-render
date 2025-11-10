@@ -7,6 +7,8 @@ from telegram import Bot
 from supabase import create_client
 import aiohttp
 import feedparser
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import threading
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -14,40 +16,46 @@ logger = logging.getLogger(__name__)
 
 # === КОНФИГУРАЦИЯ ===
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHANNELS = [os.getenv("CHANNEL_ID1"), os.getenv("CHANNEL_ID2")]
+CHANNEL_IDS = [os.getenv("CHANNEL_ID1"), os.getenv("CHANNEL_ID2")]
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+PORT = int(os.getenv("PORT", 10000))
 
-if not all([TELEGRAM_TOKEN, CHANNELS[0], CHANNELS[1], SUPABASE_URL, SUPABASE_KEY]):
-    raise ValueError("❌ Не все переменные окружения заполнены")
+# Проверка обязательных переменных
+required_vars = ["TELEGRAM_TOKEN", "CHANNEL_ID1", "SUPABASE_URL", "SUPABASE_KEY"]
+missing_vars = [var for var in required_vars if not os.getenv(var)]
+if missing_vars:
+    logger.error(f"❌ Отсутствуют обязательные переменные: {', '.join(missing_vars)}")
+    exit(1)
 
+# Инициализация сервисов
 BOT = Bot(token=TELEGRAM_TOKEN)
 SUPABASE = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# === ПРОВЕРЕННЫЕ ИСТОЧНИКИ (все работают 11.11.2025) ===
+# === ИСТОЧНИКИ ===
 SOURCES = [
-    {"name": "GOODJUDGMENT", "url": "https://goodjudgment.com/feed/"},
-    {"name": "JOHNSHOPKINS", "url": "https://www.centerforhealthsecurity.org/feed.xml"},
-    {"name": "METACULUS", "url": "https://www.metaculus.com/feed/"},
-    {"name": "DNI", "url": "https://www.dni.gov/index.php/gt2040/feed"},
-    {"name": "RANDCORP", "url": "https://www.rand.org/rss/news.html"},
-    {"name": "WEF", "url": "https://www.weforum.org/feed"},
-    {"name": "CSIS", "url": "https://www.csis.org/rss/all.xml"},
-    {"name": "ATLANTICCOUNCIL", "url": "https://www.atlanticcouncil.org/feed/"},
-    {"name": "CHATHAMHOUSE", "url": "https://www.chathamhouse.org/feed"},
-    {"name": "ECONOMIST", "url": "https://www.economist.com/the-world-this-week/rss.xml"},
-    {"name": "BLOOMBERG", "url": "https://feeds.bloomberg.com/politics/news.rss"},
-    {"name": "REUTERS", "url": "https://reutersinstitute.politics.ox.ac.uk/rss.xml"},
-    {"name": "FOREIGNAFFAIRS", "url": "https://www.foreignaffairs.com/rss.xml"},
-    {"name": "CFR", "url": "https://www.cfr.org/rss.xml"},
-    {"name": "BBCFUTURE", "url": "https://feeds.bbci.co.uk/news/world/rss.xml"},
-    {"name": "FUTURETIMELINE", "url": "https://www.futuretimeline.net/blog/feed/feed.xml"},
-    {"name": "CARNEGIE", "url": "https://carnegieendowment.org/rss/all.xml"},
-    {"name": "BRUEGEL", "url": "https://www.bruegel.org/feed"},
-    {"name": "E3G", "url": "https://www.e3g.org/feed/"}
+    {"name": "GOODJUDGMENT", "rss": "https://goodjudgment.com/feed/"},
+    {"name": "JOHNSHOPKINS", "rss": "https://www.centerforhealthsecurity.org/feed.xml"},
+    {"name": "METACULUS", "rss": "https://www.metaculus.com/feed/"},
+    {"name": "DNI", "rss": "https://www.dni.gov/index.php/gt2040/feed"},
+    {"name": "RANDCORP", "rss": "https://www.rand.org/rss/news.html"},
+    {"name": "WEF", "rss": "https://www.weforum.org/feed"},
+    {"name": "CSIS", "rss": "https://www.csis.org/rss/all.xml"},
+    {"name": "ATLANTICCOUNCIL", "rss": "https://www.atlanticcouncil.org/feed/"},
+    {"name": "CHATHAMHOUSE", "rss": "https://www.chathamhouse.org/feed"},
+    {"name": "ECONOMIST", "rss": "https://www.economist.com/the-world-this-week/rss.xml"},
+    {"name": "BLOOMBERG", "rss": "https://feeds.bloomberg.com/politics/news.rss"},
+    {"name": "REUTERS", "rss": "https://reutersinstitute.politics.ox.ac.uk/rss.xml"},
+    {"name": "FOREIGNAFFAIRS", "rss": "https://www.foreignaffairs.com/rss.xml"},
+    {"name": "CFR", "rss": "https://www.cfr.org/rss.xml"},
+    {"name": "BBC", "rss": "https://feeds.bbci.co.uk/news/world/rss.xml"},
+    {"name": "FUTURETIMELINE", "rss": "https://www.futuretimeline.net/blog/feed/feed.xml"},
+    {"name": "CARNEGIE", "rss": "https://carnegieendowment.org/feed/rss.xml"},
+    {"name": "BRUEGEL", "rss": "https://www.bruegel.org/blog/feed"},
+    {"name": "E3G", "rss": "https://www.e3g.org/feed/"}
 ]
 
-# === ОБНОВЛЕННЫЕ ФИЛЬТРЫ ===
+# === ФИЛЬТРЫ ===
 FILTERS = {
     "SVO": [
         r"\bsvo\b", r"\bспецоперация\b", r"\bspecial military operation\b", 
@@ -98,9 +106,9 @@ FILTERS = {
     ]
 }
 
-# === ФУНКЦИИ ПЕРЕВОДА С ИСПРАВЛЕННЫМ URL ===
+# === ФУНКЦИИ ПЕРЕВОДА ===
 async def translate_to_russian(text: str) -> str:
-    """Перевод текста на русский язык с правильным URL"""
+    """Перевод текста на русский язык"""
     if not text or len(text) < 5:
         return text
     
@@ -108,13 +116,10 @@ async def translate_to_russian(text: str) -> str:
     if re.search(r'[а-яё]', text[:100]):
         return text
     
-    # ИСПРАВЛЕНО: Правильный URL для LibreTranslate
-    translate_url = "https://libretranslate.de/translate"
-    
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                translate_url,
+                "https://libretranslate.de/translate",
                 json={
                     "q": text[:500],
                     "source": "auto",
@@ -125,88 +130,57 @@ async def translate_to_russian(text: str) -> str:
                 if response.status == 200:
                     data = await response.json()
                     return data.get("translatedText", text)
-                else:
-                    logger.warning(f"⚠️ LibreTranslate вернул статус {response.status}")
     except Exception as e:
         logger.warning(f"❌ Ошибка LibreTranslate: {str(e)}")
-    
-    # Резервный вариант - Google Translate
-    try:
-        url = "https://translate.googleapis.com/translate_a/single"
-        params = {
-            "sl": "auto",
-            "tl": "ru",
-            "q": text[:500],
-            "client": "gtx"
-        }
-        
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                url,
-                params=params,
-                timeout=10
-            ) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    translated = ""
-                    for item in data[0]:
-                        if item[0]:
-                            translated += item[0]
-                    return translated if translated else text
-    except Exception as e:
-        logger.warning(f"❌ Ошибка Google Translate: {str(e)}")
     
     return text
 
 # === ПРОВЕРКА ДОСТУПНОСТИ ИСТОЧНИКОВ ===
-async def check_sources_availability():
+async def check_sources():
     """Проверка доступности всех RSS-лент"""
     logger.info("🔍 Проверка доступности источников...")
-    unavailable = []
+    available = []
     
-    async with aiohttp.ClientSession(headers={'User-Agent': 'Mozilla/5.0'}) as session:
+    async with aiohttp.ClientSession(headers={
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    }) as session:
         for source in SOURCES:
             try:
-                async with session.get(source["url"], timeout=8) as response:
-                    if response.status != 200:
-                        unavailable.append(f"{source['name']} ({response.status})")
-            except Exception as e:
-                unavailable.append(f"{source['name']} (ошибка: {str(e)})")
+                async with session.get(source["rss"], timeout=10) as response:
+                    if response.status == 200:
+                        available.append(source["name"])
+            except:
+                pass
     
-    if unavailable:
-        logger.warning(f"⚠️ Недоступные источники: {', '.join(unavailable)}")
-    else:
-        logger.info("✅ Все источники доступны")
+    logger.info(f"✅ Доступные источники ({len(available)}): {', '.join(available)}")
+    return available
 
 # === ОСНОВНЫЕ ФУНКЦИИ ===
-async def get_articles():
-    """Получение статей из всех источников"""
-    await check_sources_availability()
+async def get_articles(available_sources):
+    """Получение статей из доступных источников"""
     articles = []
     
     for source in SOURCES:
+        if source["name"] not in available_sources:
+            continue
+            
         try:
-            async with aiohttp.ClientSession(headers={'User-Agent': 'Mozilla/5.0'}) as session:
-                async with session.get(source["url"], timeout=10) as response:
+            async with aiohttp.ClientSession(headers={
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }) as session:
+                async with session.get(source["rss"], timeout=15) as response:
                     if response.status != 200:
-                        logger.warning(f"⚠️ {source['name']} недоступен (статус {response.status})")
                         continue
                     
                     content = await response.text()
                     feed = feedparser.parse(content)
-                    
-                    if not feed.entries:
-                        logger.warning(f"⚠️ {source['name']}: пустая RSS-лента")
-                        continue
-                    
-                    logger.info(f"✅ {source['name']}: получено {min(3, len(feed.entries))} статей")
                     
                     for entry in feed.entries[:3]:
                         lead = ""
                         if hasattr(entry, 'summary'):
                             lead = entry.summary[:300] + "..." if entry.summary else ""
                         
-                        # Переводим только если текст на другом языке
+                        # Переводим заголовок и лид
                         translated_title = await translate_to_russian(entry.title)
                         translated_lead = await translate_to_russian(lead) if lead else ""
                         
@@ -215,16 +189,16 @@ async def get_articles():
                             "url": entry.link,
                             "source": source["name"],
                             "lead": translated_lead,
-                            "original_lang": "ru" if re.search(r'[а-яё]', entry.title[:100]) else "other"
+                            "original_title": entry.title,
+                            "original_lead": lead
                         })
         except Exception as e:
             logger.error(f"❌ Ошибка обработки {source['name']}: {str(e)}")
     
-    logger.info(f"📊 Всего получено: {len(articles)} статей")
     return articles
 
 def detect_category(text: str) -> str:
-    """Определение категории по обновленным фильтрам"""
+    """Определение категории по фильтрам"""
     text_lower = text.lower()
     
     for category, patterns in FILTERS.items():
@@ -233,7 +207,6 @@ def detect_category(text: str) -> str:
                 return category
     return None
 
-# === ОТПРАВКА В TELEGRAM ===
 async def send_to_telegram(article: dict, category: str):
     """Отправка сообщения в Telegram каналы"""
     message = (
@@ -242,32 +215,58 @@ async def send_to_telegram(article: dict, category: str):
         f"Источник: {article['url']}"
     )
     
-    for channel in CHANNELS:
+    for channel_id in CHANNEL_IDS:
+        if not channel_id:
+            continue
+            
         try:
             await BOT.send_message(
-                chat_id=channel,
+                chat_id=channel_id,
                 text=message,
                 parse_mode="HTML",
                 disable_web_page_preview=True
             )
-            logger.info(f"✅ Отправлено в {channel}: {article['title'][:30]}...")
+            logger.info(f"✅ Отправлено в {channel_id}: {article['title'][:30]}...")
         except Exception as e:
-            logger.error(f"❌ Ошибка отправки в {channel}: {str(e)}")
+            logger.error(f"❌ Ошибка отправки в {channel_id}: {str(e)}")
+
+# === HTTP-сервер для Render (health check) ===
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path in ["/", "/health"]:
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"OK")
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+def run_http_server():
+    server = HTTPServer(("", PORT), HealthCheckHandler)
+    logger.info(f"🌐 Health check server запущен на порту {PORT}")
+    server.serve_forever()
 
 # === ОСНОВНОЙ ЦИКЛ ===
 async def main():
     """Основной цикл работы бота"""
     try:
-        logger.info("🚀 Запуск бота с обновленными фильтрами")
+        logger.info("🚀 Запуск бота с фильтрами по России/Украине")
         
-        articles = await get_articles()
+        # Запускаем HTTP-сервер в отдельном потоке для health check
+        http_thread = threading.Thread(target=run_http_server, daemon=True)
+        http_thread.start()
+        
+        # Проверка доступности источников
+        available_sources = await check_sources()
+        
+        # Получение статей
+        articles = await get_articles(available_sources)
         sent_count = 0
         
         for article in articles:
             # Проверка дубликатов
             exists = SUPABASE.table("news_articles").select("id").eq("url", article["url"]).execute()
             if exists.data:
-                logger.info(f"♻️ Дубликат: {article['url']}")
                 continue
             
             # Определение категории
@@ -275,7 +274,6 @@ async def main():
             category = detect_category(full_text)
             
             if not category:
-                logger.debug(f"❌ Не соответствует фильтрам: {article['title'][:50]}...")
                 continue
             
             # Отправка и сохранение
@@ -292,7 +290,7 @@ async def main():
             
             await asyncio.sleep(1.5)
         
-        logger.info(f"🎉 Обработка завершена! Отправлено: {sent_count} статей из {len(articles)}")
+        logger.info(f"✅ Обработка завершена. Отправлено: {sent_count} статей")
         
     except Exception as e:
         logger.exception(f"🔥 Фатальная ошибка: {str(e)}")
