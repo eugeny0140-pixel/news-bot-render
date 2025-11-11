@@ -4,4 +4,3 @@ feedparser
 supabase
 deep-translator
 cloudscraper
-python-dotenv (если используется)
