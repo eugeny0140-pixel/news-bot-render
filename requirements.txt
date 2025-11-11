@@ -1,8 +1,6 @@
 feedparser
 requests
 beautifulsoup4
+cloudscraper
 deep-translator
 supabase
-httpx
-cloudscraper
-html
