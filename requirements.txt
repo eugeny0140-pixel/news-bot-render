@@ -1,8 +1,7 @@
-feedparser
 requests
 beautifulsoup4
-cloudscraper
-deep-translator
+feedparser
 supabase
-lxml
-html5lib
+deep-translator
+cloudscraper
+python-dotenv (если используется)
