@@ -97,7 +97,7 @@ SOURCES = [
     {"name": "Carnegie", "url": "https://carnegieendowment.org/publications/", "method": "html_parser"},
     
     # 18. Bruegel (Think-tank)
-    {"name": "Bruegel", "rss": "https://www.bruegel.org/bruegel-feeds", "method": "cloudscraper"},
+    {"name": "Bruegel", "rss": "https://www.bruegel.org/", "method": "cloudscraper"},
     
     # 19. E3G (Think-tank)
     {"name": "E3G", "rss": "https://www.e3g.org/feed/", "method": "rss"},
