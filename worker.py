@@ -97,68 +97,114 @@ SOURCES = [
     {"name": "Carnegie", "url": "https://carnegieendowment.org/publications/", "method": "html_parser"},
     
     # 18. Bruegel (Think-tank)
-    {"name": "Bruegel", "rss": "https://www.bruegel.org/", "method": "cloudscraper"},
+    {"name": "Bruegel", "url": "https://www.bruegel.org/analysis", "method": "html_parser"},
     
     # 19. E3G (Think-tank)
     {"name": "E3G", "rss": "https://www.e3g.org/feed/", "method": "rss"},
 ]
 
-# === Ключевые слова (точные регулярные выражения) ===
+# === Трехэтапная фильтрация для России/Украины, СВО и крипторынка ===
+# ЭТАП 1: ПОЗИТИВНАЯ ФИЛЬТРАЦИЯ
 KEYWORDS = [
-    r"\brussia\b", r"\brussian\b", r"\bputin\b", r"\bmoscow\b", r"\bkremlin\b",
-    r"\bukraine\b", r"\bukrainian\b", r"\bzelensky\b", r"\bkyiv\b", r"\bkiev\b",
-    r"\bcrimea\b", r"\bdonbas\b", r"\bsanction[s]?\b", r"\bgazprom\b",
-    r"\bnord\s?stream\b", r"\bwagner\b", r"\blavrov\b", r"\bshoigu\b",
-    r"\bmedvedev\b", r"\bpeskov\b", r"\bnato\b", r"\beuropa\b", r"\busa\b",
-    r"\bsoviet\b", r"\bussr\b", r"\bpost\W?soviet\b",
-    # === СВО и Война ===
-    r"\bsvo\b", r"\bспецоперация\b", r"\bspecial military operation\b",
-    r"\bвойна\b", r"\bwar\b", r"\bconflict\b", r"\bконфликт\b",
-    r"\bнаступление\b", r"\boffensive\b", r"\bатака\b", r"\battack\b",
-    r"\bудар\b", r"\bstrike\b", r"\bобстрел\b", r"\bshelling\b",
-    r"\bдрон\b", r"\bdrone\b", r"\bmissile\b", r"\bракета\b",
-    r"\bэскалация\b", r"\bescalation\b", r"\bмобилизация\b", r"\bmobilization\b",
-    r"\bфронт\b", r"\bfrontline\b", r"\bзахват\b", r"\bcapture\b",
-    r"\bосвобождение\b", r"\bliberation\b", r"\bбой\b", r"\bbattle\b",
-    r"\bпотери\b", r"\bcasualties\b", r"\bпогиб\b", r"\bkilled\b",
-    r"\bранен\b", r"\binjured\b", r"\bпленный\b", r"\bprisoner of war\b",
-    r"\bпереговоры\b", r"\btalks\b", r"\bперемирие\b", r"\bceasefire\b",
-    r"\bсанкции\b", r"\bsanctions\b", r"\bоружие\b", r"\bweapons\b",
-    r"\bпоставки\b", r"\bsupplies\b", r"\bhimars\b", r"\batacms\b",
-    r"\bhour ago\b", r"\bчас назад\b", r"\bminutos atrás\b", r"\b小时前\b",
-    # === Криптовалюта ===
-    r"\bbitcoin\b", r"\bbtc\b", r"\bбиткоин\b", r"\b比特币\b",
-    r"\bethereum\b", r"\beth\b", r"\bэфир\b", r"\b以太坊\b",
-    r"\bbinance coin\b", r"\bbnb\b", r"\busdt\b", r"\btether\b",
-    r"\bxrp\b", r"\bripple\b", r"\bcardano\b", r"\bada\b",
-    r"\bsolana\b", r"\bsol\b", r"\bdoge\b", r"\bdogecoin\b",
-    r"\bavalanche\b", r"\bavax\b", r"\bpolkadot\b", r"\bdot\b",
-    r"\bchainlink\b", r"\blink\b", r"\btron\b", r"\btrx\b",
-    r"\bcbdc\b", r"\bcentral bank digital currency\b", r"\bцифровой рубль\b",
-    r"\bdigital yuan\b", r"\beuro digital\b", r"\bdefi\b", r"\bдецентрализованные финансы\b",
-    r"\bnft\b", r"\bnon-fungible token\b", r"\bsec\b", r"\bцб рф\b",
-    r"\bрегуляция\b", r"\bregulation\b", r"\bзапрет\b", r"\bban\b",
-    r"\bмайнинг\b", r"\bmining\b", r"\bhalving\b", r"\bхалвинг\b",
-    r"\bволатильность\b", r"\bvolatility\b", r"\bcrash\b", r"\bкрах\b",
-    r"\b刚刚\b", r"\bدقائق مضت\b",
-    # === Пандемия ===
-    r"\bpandemic\b", r"\bпандемия\b", r"\b疫情\b", r"\bجائحة\b",
-    r"\boutbreak\b", r"\bвспышка\b", r"\bэпидемия\b", r"\bepidemic\b",
-    r"\bvirus\b", r"\bвирус\b", r"\bвирусы\b", r"\b变异株\b",
-    r"\bvaccine\b", r"\bвакцина\b", r"\b疫苗\b", r"\bلقاح\b",
-    r"\bbooster\b", r"\bбустер\b", r"\bревакцинация\b",
-    r"\bquarantine\b", r"\bкарантин\b", r"\b隔离\b", r"\bحجر صحي\b",
-    r"\blockdown\b", r"\bлокдаун\b", r"\b封锁\b",
-    r"\bmutation\b", r"\bмутация\b", r"\b变异\b",
-    r"\bstrain\b", r"\bштамм\b", r"\bomicron\b", r"\bdelta\b",
-    r"\bbiosafety\b", r"\bбиобезопасность\b", r"\b生物安全\b",
-    r"\blab leak\b", r"\bлабораторная утечка\b", r"\b实验室泄漏\b",
-    r"\bgain of function\b", r"\bусиление функции\b",
-    r"\bwho\b", r"\bвоз\b", r"\bcdc\b", r"\bроспотребнадзор\b",
-    r"\binfection rate\b", r"\bзаразность\b", r"\b死亡率\b",
-    r"\bhospitalization\b", r"\bгоспитализация\b",
-    r"\bقبل ساعات\b", r"\b刚刚报告\b"
+    # Геополитика и военные действия
+    r"\b(russia|rus|российск(ая|ое|ий|их)|рф|kremlin|putin|belarus|беларусь)\b",
+    r"\b(ukraine|ukrainian|kiev|kyiv|zelensk(y|yy)|donbas|crimea|kherson|kharkiv|lviv)\b",
+    r"\b(russian invasion|special military operation|SVO|russo-ukrainian war|ukraine conflict)\b",
+    r"\b(russian military|wagner group|prigozhin|separatists|LNR|DNR|annexation)\b",
+    r"\b(ukrainian forces|ATACMS|HIMARS|f-16|patriot system|counteroffensive)\b",
+    r"\b(sanctions (against|on) russia|eu sanctions|price cap|SWIFT ban)\b",
+    r"\b(iaea zaporizhzhia|nuclear plant|nord stream sabotage)\b",
+    
+    # Крипторынок в контексте РФ/Украины
+    r"\b(russia crypto|digital ruble|цифровой рубль|cbr digital assets|garantex exchange)\b",
+    r"\b(ukraine crypto donations|war bonds crypto|kuna exchange|come back alive crypto)\b",
+    r"\b(russian crypto ban|cbr cryptocurrency regulation|rossvyaz crypto block)\b",
+    r"\b(energy crypto mining russia|iran russia crypto|belarus crypto scheme)\b",
+    
+    # Ключевые события и институты
+    r"\b(ministry of defence ru|mod ru|rostec|alrosa|gazprom|rosneft)\b",
+    r"\b(nato russia|finland nato|sweden nato|budapest memorandum)\b",
+    r"\b(mobilization russia|filobank|shadow fleet|parallel imports russia)\b",
+    r"\b(un vote russia|international court justice ukraine|icc putin)\b"
 ]
+
+# ЭТАП 2: НЕГАТИВНАЯ ФИЛЬТРАЦИЯ (ЧЁРНЫЙ СПИСОК)
+BLACKLIST = [
+    # Исключение ложных срабатываний для "war"
+    r"\bstar wars\b", r"\bworld of warcraft\b", r"\bwarhammer\b", r"\bwar of the roses\b",
+    
+    # Исключение общих крипто-новостей без связи с РФ/Укр
+    r"\bbitcoin price\b.*\b(analysis|forecast|technical)\b", 
+    r"\bethereum merge\b", r"\bcrypto etf approval\b", r"\bcoinbase earnings\b",
+    
+    # Исключение пандемий без геопривязки
+    r"\bpandemic\b.*\b(flu|h5n1|mpox)\b", r"\bcovid-19\b.*\b(vaccine|variant)\b\s*[^.]*?\b(not|without)\b\s*\b(russia|ukraine)\b",
+    
+    # Исключение военных учений без связи с регионом
+    r"\bmilitary exercise\b.*\b(nato|pacific|china|india)\b", 
+    r"\bdrone show\b", r"\bnuclear safety\b.*\b(japan|fukushima)\b",
+    
+    # Санкции против других стран
+    r"\bsanction[s]?\b.*\b(venezuela|iran|north korea|myanmar|syria|belarus)\b",
+    
+    # Коммерческие дроны
+    r"\bdrone delivery\b.*\b(amazon|google|wing)\b"
+]
+
+# ЭТАП 3: КОНТЕКСТНАЯ ВАЛИДАЦИЯ
+CONTEXT_TERMS = r"\b(russia|ukraine|belarus|kremlin|putin|zelensk(y|yy)?|donbas|crimea|kyiv|kiev|moscow|russian|ukrainian|wagner|rostec|gazprom|LNR|DNR|ukrainian territory)\b"
+CONTEXT_WINDOW = 200  # символов в каждую сторону от ключевого слова
+CRITICAL_TERMS = [
+    r"\b(?:war|attack|strike|sanction[s]?|military|conflict|drone|missile|rocket|bomb|nuclear|bio\w*)\b",
+    r"\bcrypto(?:currency)?\b",
+    r"\b(?:pandemic|virus|vaccine)\b"
+]
+
+def is_relevant(text: str) -> bool:
+    """Трёхэтапная фильтрация новостей"""
+    text_lower = text.lower()
+    
+    # === ЭТАП 1: ПОЗИТИВНАЯ ФИЛЬТРАЦИЯ ===
+    keyword_matches = []
+    for pattern in KEYWORDS:
+        matches = list(re.finditer(pattern, text_lower, re.IGNORECASE | re.UNICODE))
+        if matches:
+            keyword_matches.extend(matches)
+    
+    if not keyword_matches:
+        return False
+    
+    # === ЭТАП 2: НЕГАТИВНАЯ ФИЛЬТРАЦИЯ ===
+    for pattern in BLACKLIST:
+        if re.search(pattern, text_lower, re.IGNORECASE | re.UNICODE):
+            return False
+    
+    # === ЭТАП 3: КОНТЕКСТНАЯ ВАЛИДАЦИЯ ===
+    critical_compiled = re.compile("|".join(CRITICAL_TERMS), re.IGNORECASE | re.UNICODE)
+    
+    for match in keyword_matches:
+        start, end = match.span()
+        matched_text = match.group()
+        
+        # Пропускаем явно геопривязанные термины (не требуют контекста)
+        if re.search(r"(russia|ukraine|kremlin|putin|zelensk(y|yy)?|donbas|crimea|wagner|rostec)", matched_text, re.IGNORECASE):
+            return True
+        
+        # Проверяем критичность термина
+        if critical_compiled.search(matched_text):
+            # Формируем контекстное окно
+            context_start = max(0, start - CONTEXT_WINDOW)
+            context_end = min(len(text_lower), end + CONTEXT_WINDOW)
+            context_snippet = text_lower[context_start:context_end]
+            
+            # Валидация контекста
+            if re.search(CONTEXT_TERMS, context_snippet, re.IGNORECASE | re.UNICODE):
+                return True
+        else:
+            # Некритичные термины (например, "digital ruble") всегда проходят
+            return True
+    
+    return False
 
 # === Вспомогательные функции ===
 def clean_html(raw: str) -> str:
@@ -177,10 +223,6 @@ def translate(text: str) -> str:
     except Exception as e:
         logger.warning(f"GoogleTranslate failed: {e}. Using original text.")
         return text
-
-def is_relevant(title: str, desc: str) -> bool:
-    text = (title + " " + desc).lower()
-    return any(re.search(pattern, text) for pattern in KEYWORDS)
 
 def is_article_sent(url: str) -> bool:
     try:
@@ -209,7 +251,8 @@ def send_to_telegram(prefix: str, title: str, lead: str, url: str):
                 json={
                     "chat_id": ch,
                     "text": message,
-                    "parse_mode": "HTML"
+                    "parse_mode": "HTML",
+                    "disable_web_page_preview": False
                 },
                 timeout=10
             )
@@ -223,8 +266,18 @@ def send_to_telegram(prefix: str, title: str, lead: str, url: str):
 # === Специализированные функции для парсинга ===
 def fetch_rss_feed(url):
     """Стандартное получение RSS-ленты"""
-    feed = feedparser.parse(url)
-    return feed
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'application/rss+xml, application/xml;q=0.9, */*;q=0.8'
+        }
+        response = requests.get(url, headers=headers, timeout=15)
+        response.raise_for_status()
+        feed = feedparser.parse(response.content)
+        return feed
+    except Exception as e:
+        logger.error(f"RSS fetch error for {url}: {e}")
+        return feedparser.FeedParserDict(entries=[])
 
 def fetch_rss_with_fallback(url):
     """Получение RSS с резервным вариантом при ошибке"""
@@ -249,23 +302,29 @@ def parse_johns_hopkins():
     """Парсинг сайта Johns Hopkins Center for Health Security"""
     url = "https://www.centerforhealthsecurity.org/news/"
     try:
-        response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=15)
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+        response = requests.get(url, headers=headers, timeout=15)
         response.raise_for_status()
         soup = BeautifulSoup(response.content, 'html.parser')
         
         entries = []
         # Поиск статей на странице
-        for article in soup.select('.news-item'):
-            title_elem = article.select_one('h3 a')
+        for article in soup.select('.resource-item, .news-item, .list-item'):
+            title_elem = article.select_one('h3 a, h2 a, .title a')
             if not title_elem:
                 continue
                 
             title = title_elem.get_text().strip()
-            link = "https://www.centerforhealthsecurity.org" + title_elem['href']
-            desc_elem = article.select_one('.summary')
+            link = title_elem['href']
+            # Ensure absolute URL
+            if link.startswith('/'):
+                link = 'https://www.centerforhealthsecurity.org' + link
+            
+            desc_elem = article.select_one('.summary, .excerpt, p')
             desc = desc_elem.get_text().strip() if desc_elem else ""
-            date_elem = article.select_one('.date')
-            pub_date = date_elem.get_text().strip() if date_elem else ""
+            
+            date_elem = article.select_one('.date, time')
+            pub_date = date_elem.get_text().strip() if date_elem else time.strftime("%a, %d %b %Y %H:%M:%S +0000", time.gmtime())
             
             entries.append({
                 'title': title,
@@ -285,17 +344,27 @@ def parse_dni_global_trends():
     """Парсинг сайта DNI Global Trends"""
     url = "https://www.dni.gov/index.php/gt2040-home"
     try:
-        response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=15)
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+        response = requests.get(url, headers=headers, timeout=15)
         response.raise_for_status()
         soup = BeautifulSoup(response.content, 'html.parser')
         
         entries = []
         # Поиск отчетов и новостей
-        for item in soup.select('.main-content a'):
-            if 'gt2040' in item['href'].lower() or 'global' in item.text.lower():
-                title = item.get_text().strip()
-                link = url + item['href'] if item['href'].startswith('/') else item['href']
-                desc = f"Global Trends report from DNI: {title}"
+        for item in soup.select('a[href*="global-trends"], a[href*="gt2040"], .content a'):
+            title = item.get_text().strip()
+            if len(title) < 10:  # Skip very short titles
+                continue
+                
+            link = item['href']
+            # Ensure absolute URL
+            if link.startswith('/'):
+                link = 'https://www.dni.gov' + link
+            
+            # Filter relevant content
+            if any(keyword in title.lower() for keyword in ['global trends', 'gt2040', 'russia', 'ukraine', 'security', 'geopolitical']) or \
+               any(keyword in link.lower() for keyword in ['global-trends', 'gt2040']):
+                desc = f"Global Trends report: {title}. This analysis covers geopolitical trends and future scenarios."
                 
                 entries.append({
                     'title': title,
@@ -315,36 +384,90 @@ def parse_carnegie():
     """Парсинг сайта Carnegie Endowment"""
     url = "https://carnegieendowment.org/publications/"
     try:
-        response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=15)
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+        response = requests.get(url, headers=headers, timeout=15)
         response.raise_for_status()
         soup = BeautifulSoup(response.content, 'html.parser')
         
         entries = []
         # Поиск публикаций
-        for article in soup.select('.publications-list .item'):
-            title_elem = article.select_one('.title a')
+        for article in soup.select('.publications-list .item, .publication-item, .article'):
+            title_elem = article.select_one('.title a, h3 a, h2 a')
             if not title_elem:
                 continue
                 
             title = title_elem.get_text().strip()
-            link = "https://carnegieendowment.org" + title_elem['href']
-            desc_elem = article.select_one('.summary')
-            desc = desc_elem.get_text().strip() if desc_elem else ""
-            date_elem = article.select_one('.date')
-            date = date_elem.get_text().strip() if date_elem else ""
+            link = title_elem['href']
+            # Ensure absolute URL
+            if link.startswith('/'):
+                link = 'https://carnegieendowment.org' + link
             
-            entries.append({
-                'title': title,
-                'link': link,
-                'summary': desc,
-                'published': date
-            })
+            desc_elem = article.select_one('.summary, .excerpt, .description, p')
+            desc = desc_elem.get_text().strip() if desc_elem else ""
+            
+            date_elem = article.select_one('.date, time')
+            date = date_elem.get_text().strip() if date_elem else time.strftime("%a, %d %b %Y %H:%M:%S +0000", time.gmtime())
+            
+            # Add region filter for Russia/Europe content
+            if any(keyword in title.lower() or keyword in desc.lower() 
+                   for keyword in ['russia', 'ukraine', 'moscow', 'kremlin', 'putin', 'eastern europe', 'eurasia']):
+                entries.append({
+                    'title': title,
+                    'link': link,
+                    'summary': desc,
+                    'published': date
+                })
         
         feed = feedparser.FeedParserDict()
         feed.entries = entries
         return feed
     except Exception as e:
         logger.error(f"Carnegie parsing error: {e}")
+        return feedparser.FeedParserDict(entries=[])
+
+def parse_bruegel():
+    """Парсинг сайта Bruegel"""
+    url = "https://www.bruegel.org/analysis"
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+        response = requests.get(url, headers=headers, timeout=15)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.content, 'html.parser')
+        
+        entries = []
+        # Поиск статей
+        for article in soup.select('.post-item, .blog-item, article'):
+            title_elem = article.select_one('h3 a, h2 a, .title a')
+            if not title_elem:
+                continue
+                
+            title = title_elem.get_text().strip()
+            link = title_elem['href']
+            # Ensure absolute URL
+            if not link.startswith('http'):
+                link = 'https://www.bruegel.org' + link
+            
+            desc_elem = article.select_one('.excerpt, .summary, .description, p')
+            desc = desc_elem.get_text().strip() if desc_elem else ""
+            
+            date_elem = article.select_one('.date, time')
+            date = date_elem.get_text().strip() if date_elem else time.strftime("%a, %d %b %Y %H:%M:%S +0000", time.gmtime())
+            
+            # Filter for relevant topics
+            if any(keyword in title.lower() or keyword in desc.lower() 
+                   for keyword in ['russia', 'ukraine', 'sanctions', 'energy security', 'europe', 'security', 'geopolitics', 'defense']):
+                entries.append({
+                    'title': title,
+                    'link': link,
+                    'summary': desc,
+                    'published': date
+                })
+        
+        feed = feedparser.FeedParserDict()
+        feed.entries = entries
+        return feed
+    except Exception as e:
+        logger.error(f"Bruegel parsing error: {e}")
         return feedparser.FeedParserDict(entries=[])
 
 def fetch_and_process():
@@ -370,10 +493,29 @@ def fetch_and_process():
                     feed = parse_dni_global_trends()
                 elif src['name'] == "Carnegie":
                     feed = parse_carnegie()
+                elif src['name'] == "Bruegel":
+                    feed = parse_bruegel()
                 else:
                     feed = feedparser.FeedParserDict(entries=[])
             else:
-                feed = fetch_rss_feed(src.get('rss', ''))
+                if 'rss' in src:
+                    feed = fetch_rss_feed(src['rss'])
+                elif 'url' in src:
+                    # Default to html parser if no method specified but url exists
+                    if src['name'] in ["Johns Hopkins", "DNI Global Trends", "Carnegie", "Bruegel"]:
+                        if src['name'] == "Johns Hopkins":
+                            feed = parse_johns_hopkins()
+                        elif src['name'] == "DNI Global Trends":
+                            feed = parse_dni_global_trends()
+                        elif src['name'] == "Carnegie":
+                            feed = parse_carnegie()
+                        elif src['name'] == "Bruegel":
+                            feed = parse_bruegel()
+                    else:
+                        feed = fetch_rss_feed(src['url'])  # Try as RSS
+                else:
+                    logger.warning(f"No valid URL or RSS for source: {src['name']}")
+                    continue
             
             if not hasattr(feed, 'entries') or not feed.entries:
                 logger.warning(f"❌ Empty or invalid feed from {src['name']}")
@@ -406,13 +548,13 @@ def fetch_and_process():
                 if not title or not desc:
                     continue
 
-                if not is_relevant(title, desc):
+                if not is_relevant(title + " " + desc):
                     continue
 
                 lead = desc.split("\n")[0].split(". ")[0].strip()
                 if not lead:
-                    continue
-
+                    lead = desc[:150] + "..." if len(desc) > 150 else desc
+                
                 send_to_telegram(src["name"], title, lead, url)
                 mark_article_sent(url, title)
                 time.sleep(0.5)
