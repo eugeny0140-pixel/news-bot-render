@@ -8,7 +8,7 @@ import html
 from datetime import datetime, timezone, timedelta
 from bs4 import BeautifulSoup
 from supabase import create_client
-from deep_translator import GoogleTranslator
+from deep_translator import GoogleTranslator, YandexTranslator
 
 # === Логирование ===
 logging.basicConfig(
@@ -20,15 +20,14 @@ logger = logging.getLogger(__name__)
 
 # === Настройки ===
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-CHANNEL_IDS = [cid.strip() for cid in os.getenv("CHANNEL_ID1", "").split(",") if cid.strip()]
-if os.getenv("CHANNEL_ID2"):
-    CHANNEL_IDS.extend([cid.strip() for cid in os.getenv("CHANNEL_ID2").split(",") if cid.strip()])
+# Новые ID каналов
+CHANNEL_IDS = ["-1002923537056", "-1002914190770"]
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 # === Проверка настроек ===
-for var in ["TELEGRAM_BOT_TOKEN", "CHANNEL_ID1", "SUPABASE_URL", "SUPABASE_KEY"]:
+for var in ["TELEGRAM_BOT_TOKEN", "SUPABASE_URL", "SUPABASE_KEY"]:
     if not os.getenv(var):
         logger.error(f"❌ Обязательная переменная {var} не задана!")
         exit(1)
@@ -44,24 +43,24 @@ except Exception as e:
 
 # === Упрощенные фильтры для России/Украины и криптовалют ===
 SIMPLE_KEYWORDS = [
-    r"russia|россия|русск(ий|ого|ой|их|ому|ую)",
-    r"ukraine|украин(а|у|е|ы|ский|ских|цей|цу)",
-    r"putin|путин|владимир путин",
-    r"zelensky|зеленск(ий|ого|ому|им|ем|у|ом)",
+    r"russia|россия|русск(ий|ого|ой|их|им)",
+    r"ukraine|украин(а|у|е|ы|ой|ский|ских)",
+    r"putin|путин",
+    r"zelensky|зеленск(ий|ого|ому)",
     r"kremlin|кремль",
     r"moscow|москва",
     r"kyiv|kiev|киев",
     r"donbas|донбасс",
     r"crimea|крым",
-    r"belarus|беларусь|минск",
-    r"war|война|конфликт|спецоперация|svо|военные действия|военная операция",
-    r"sanctions?|санкции|ограничения",
-    r"military|воен(ные|ной|ных|ному|ная)|армия|войска|батальон|полк",
-    r"crypto|биткоин|крипто|блокчейн|цифровой рубль|digital ruble",
-    r"bitcoin|btc|эфир|ethereum|eth|solana|sol|doge|dogecoin",
-    r"nuclear|ядерн(ый|ого|ому|ых|ое|ая)",
-    r"gazprom|роснефть|ростех|rostec",
-    r"nato|нап|организация североатлантического договора"
+    r"war|война|конфликт|спецоперация|svо",
+    r"sanctions?|санкции|эмбарго",
+    r"military|воен(ные|ной|ных|ным)|армия|войска",
+    r"crypto|биткоин|крипто|блокчейн|блокчейн",
+    r"bitcoin|btc|эфириум|ethereum|eth",
+    r"ruble|рубль|digital ruble|цифровой рубль",
+    r"nuclear|ядерн(ый|ого|ому|ых|ое)",
+    r"missile|ракет(а|ы|ный|ой)",
+    r"drone|дрон|беспилотник"
 ]
 
 def is_relevant_simple(text: str) -> bool:
@@ -69,19 +68,29 @@ def is_relevant_simple(text: str) -> bool:
     text_lower = text.lower()
     return any(re.search(pattern, text_lower, re.IGNORECASE) for pattern in SIMPLE_KEYWORDS)
 
-def translate_text(text: str) -> str:
-    """Перевод текста на русский с обработкой ошибок"""
-    if not text or len(text.strip()) < 3:
+def safe_translate(text: str) -> str:
+    """Надежный перевод с резервным переводчиком"""
+    if not text.strip() or len(text) < 5:
         return text
     
     try:
-        # Обрезаем слишком длинный текст для перевода
-        text_to_translate = text[:2000] if len(text) > 2000 else text
-        translated = GoogleTranslator(source='auto', target='ru').translate(text_to_translate)
-        return translated
+        # Пробуем Google Translate
+        translator = GoogleTranslator(source='auto', target='ru')
+        return translator.translate(text)
     except Exception as e:
-        logger.warning(f"Translation error: {e}")
-        return text
+        logger.warning(f"GoogleTranslate failed: {e}. Trying Yandex.")
+        try:
+            # Резервный вариант: Yandex Translate
+            translator = YandexTranslator(api_key=os.getenv("YANDEX_API_KEY"))  # Если есть API ключ
+            return translator.translate(text)
+        except:
+            try:
+                # Еще один резервный вариант: бесплатный Yandex
+                translator = YandexTranslator(source='auto', target='ru')
+                return translator.translate(text)
+            except Exception as e2:
+                logger.warning(f"YandexTranslate also failed: {e2}. Using original text.")
+                return text
 
 # === Вспомогательные функции ===
 def clean_html(raw: str) -> str:
@@ -109,13 +118,11 @@ def mark_article_sent(url: str, title: str):
 
 def send_to_telegram(prefix: str, title: str, lead: str, url: str):
     try:
-        # Переводим заголовок и описание
-        title_ru = translate_text(title)
-        lead_ru = translate_text(lead)
+        # Переводим заголовок и описание на русский
+        title_ru = safe_translate(title)
+        lead_ru = safe_translate(lead)
         
-        # Формируем сообщение
         message = f"<b>{prefix}</b>: {title_ru}\n\n{lead_ru}\n\nИсточник: {url}"
-        
         for ch in CHANNEL_IDS:
             resp = requests.post(
                 f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
@@ -128,7 +135,7 @@ def send_to_telegram(prefix: str, title: str, lead: str, url: str):
                 timeout=10
             )
             if resp.status_code == 200:
-                logger.info(f"📤 Sent: {title_ru[:60]}...")
+                logger.info(f"📤 Sent: {title[:60]}...")
             else:
                 logger.error(f"❌ TG error: {resp.status_code} {resp.text}")
     except Exception as e:
@@ -190,38 +197,55 @@ def parse_html_feed(url, selectors):
 
 # === Источники (самые надежные) ===
 SOURCES = [
-    # 1. RAND Corporation
+    # 1. Good Judgment
+    {"name": "Good Judgment", "url": "https://goodjudgment.com/feed/", "method": "rss"},
+    
+    # 2. RAND Corporation
     {"name": "RAND", "url": "https://www.rand.org/rss/recent.xml", "method": "rss"},
     
-    # 2. World Economic Forum
+    # 3. World Economic Forum
     {"name": "WEF", "url": "https://www.weforum.org/agenda/archive/feed", "method": "rss"},
     
-    # 3. CSIS
+    # 4. CSIS
     {"name": "CSIS", "url": "https://www.csis.org/rss.xml", "method": "rss"},
     
-    # 4. Atlantic Council
+    # 5. Atlantic Council
     {"name": "Atlantic Council", "url": "https://www.atlanticcouncil.org/feed/", "method": "rss"},
     
-    # 5. Chatham House
+    # 6. Chatham House
     {"name": "Chatham House", "url": "https://www.chathamhouse.org/feed", "method": "rss"},
     
-    # 6. The Economist
+    # 7. The Economist
     {"name": "Economist", "url": "https://www.economist.com/the-world-this-week/rss.xml", "method": "rss"},
     
-    # 7. Bloomberg
-    {"name": "Bloomberg", "url": "https://feeds.bloomberg.com/markets/news.rss", "method": "rss"},
+    # 8. Bloomberg
+    {"name": "Bloomberg", "url": "https://feeds.bloomberg.com/politics/news.rss", "method": "rss"},
     
-    # 8. Foreign Affairs
+    # 9. Foreign Affairs
     {"name": "Foreign Affairs", "url": "https://www.foreignaffairs.com/rss.xml", "method": "rss"},
     
-    # 9. CFR
+    # 10. CFR
     {"name": "CFR", "url": "https://www.cfr.org/rss.xml", "method": "rss"},
     
-    # 10. Carnegie Endowment
-    {"name": "Carnegie", "url": "https://carnegieendowment.org/publications/feed", "method": "rss"},
+    # 11. Carnegie Endowment (упрощенный парсер)
+    {"name": "Carnegie", "url": "https://carnegieendowment.org/publications/", 
+     "method": "html", 
+     "selectors": {
+         "container": ".views-row",
+         "title": ".views-field-title a",
+         "desc": ".views-field-field-pub-excerpt .field-content",
+         "date": ".views-field-field-pub-date .field-content"
+     }},
     
-    # 11. Bruegel
-    {"name": "Bruegel", "url": "https://www.bruegel.org/feed", "method": "rss"}
+    # 12. Bruegel (упрощенный парсер)
+    {"name": "Bruegel", "url": "https://www.bruegel.org/analysis", 
+     "method": "html", 
+     "selectors": {
+         "container": ".post-item",
+         "title": "h3 a",
+         "desc": ".excerpt",
+         "date": ".date"
+     }}
 ]
 
 def fetch_and_process():
@@ -275,8 +299,9 @@ def fetch_and_process():
                 if not title or not desc:
                     continue
 
-                # Упрощенная проверка на релевантность
-                if not is_relevant_simple(title + " " + desc):
+                # Дополнительная проверка на релевантность
+                full_text = title + " " + desc
+                if not is_relevant_simple(full_text):
                     continue
 
                 lead = desc.split("\n")[0].split(". ")[0].strip()
@@ -285,7 +310,7 @@ def fetch_and_process():
                 
                 send_to_telegram(src["name"], title, lead, url)
                 mark_article_sent(url, title)
-                time.sleep(0.5)  # Короткая задержка между отправками
+                time.sleep(1)  # Задержка для избежания блокировки Telegram
 
         except Exception as e:
             logger.error(f"❌ Error on {src['name']}: {e}")
@@ -294,10 +319,10 @@ def fetch_and_process():
 
 # === Запуск ===
 if __name__ == "__main__":
-    logger.info("🚀 Starting Russia Monitor Bot (Russian translation version)...")
-    logger.info("🔍 Using simple keyword filters for Russia/Ukraine topics")
+    logger.info("🚀 Starting Russia Monitor Bot with translation...")
+    logger.info("🔍 Using simple keyword filters for Russia/Ukraine and crypto topics")
+    logger.info(f"✅ Sending translations to channels: {', '.join(CHANNEL_IDS)}")
     logger.info(f"⏳ Checking last 3 days of news from {len(SOURCES)} sources")
-    logger.info("🇷🇺 All messages will be translated to Russian")
     
     while True:
         fetch_and_process()
