@@ -7,9 +7,8 @@ import requests
 import html
 from datetime import datetime, timezone, timedelta
 from bs4 import BeautifulSoup
-import cloudscraper
-from deep_translator import GoogleTranslator
 from supabase import create_client
+from deep_translator import GoogleTranslator
 
 # === Логирование ===
 logging.basicConfig(
@@ -43,168 +42,46 @@ except Exception as e:
     logger.error(f"❌ Supabase ошибка: {e}")
     exit(1)
 
-# === Источники (все 19) ===
-SOURCES = [
-    # 1. Good Judgment (Платформа superforecasting) - RSS
-    {"name": "Good Judgment", "rss": "https://goodjudgment.com/feed/", "method": "rss"}, # Исправленный URL
-    
-    # 2. Johns Hopkins (Академический think-tank) - HTML
-    {"name": "Johns Hopkins", "url": "https://www.centerforhealthsecurity.org/news/", "method": "html_parser"},
-    
-    # 3. Metaculus (Онлайн-платформа) - RSS
-    {"name": "Metaculus", "rss": "https://metaculus.com/feed/updates/", "method": "rss"},
-    
-    # 4. DNI Global Trends (Гос. think-tank) - HTML (обработка ошибки)
-    {"name": "DNI Global Trends", "url": "https://www.dni.gov/index.php/gt2040-home", "method": "html_parser"},
-    
-    # 5. RAND Corporation (Think-tank) - RSS
-    {"name": "RAND", "rss": "https://www.rand.org/rss/recent.xml", "method": "rss"},
-    
-    # 6. World Economic Forum (Think-tank/форум) - Исправленный RSS
-    {"name": "World Economic Forum", "rss": "https://www.weforum.org/agenda/archive/feed", "method": "rss"}, # Исправленный URL
-    
-    # 7. CSIS (Think-tank) - RSS
-    {"name": "CSIS", "rss": "https://www.csis.org/rss.xml", "method": "rss"},
-    
-    # 8. Atlantic Council (Think-tank) - RSS
-    {"name": "Atlantic Council", "rss": "https://www.atlanticcouncil.org/feed/", "method": "rss"},
-    
-    # 9. Chatham House (Think-tank) - RSS
-    {"name": "Chatham House", "rss": "https://www.chathamhouse.org/feed", "method": "rss"},
-    
-    # 10. The Economist (Журнал) - RSS
-    {"name": "ECONOMIST", "rss": "https://www.economist.com/the-world-this-week/rss.xml", "method": "rss"},
-    
-    # 11. Bloomberg (Онлайн/broadcaster) - RSS
-    {"name": "BLOOMBERG", "rss": "https://feeds.bloomberg.com/markets/news.rss", "method": "rss"}, # Исправленный URL
-    
-    # 12. Reuters Institute (Академический/онлайн) - Теперь HTML-парсер
-    {"name": "Reuters Institute", "url": "https://reutersinstitute.politics.ox.ac.uk/research", "method": "html_parser"}, # Новый URL
-    
-    # 13. Foreign Affairs (Журнал) - RSS
-    {"name": "Foreign Affairs", "rss": "https://www.foreignaffairs.com/rss.xml", "method": "rss"},
-    
-    # 14. CFR (Think-tank) - Теперь HTML-парсер (исправлен)
-    {"name": "CFR", "url": "https://www.cfr.org/publications", "method": "html_parser"},
-    
-    # 15. BBC Future (Broadcaster/онлайн) - RSS
-    {"name": "BBC Future", "rss": "http://feeds.bbci.co.uk/news/science_and_environment/rss.xml", "method": "rss"},
-    
-    # 16. Future Timeline (Нишевый блог) - Теперь HTML-парсер (исправлен)
-    {"name": "Future Timeline", "url": "http://www.futuretimeline.net/", "method": "html_parser"},
-    
-    # 17. Carnegie Endowment (Think-tank) - Теперь HTML-парсер (исправлен)
-    {"name": "Carnegie", "url": "https://carnegieendowment.org/publications/", "method": "html_parser"},
-    
-    # 18. Bruegel (Think-tank) - HTML
-    {"name": "Bruegel", "url": "https://www.bruegel.org/analysis", "method": "html_parser"},
-    
-    # 19. E3G (Think-tank) - RSS
-    {"name": "E3G", "rss": "https://www.e3g.org/feed/", "method": "rss"},
+# === Упрощенные фильтры для России/Украины и криптовалют ===
+SIMPLE_KEYWORDS = [
+    r"russia|россия|русск(ий|ого|ой|их|ому|ую)",
+    r"ukraine|украин(а|у|е|ы|ский|ских|цей|цу)",
+    r"putin|путин|владимир путин",
+    r"zelensky|зеленск(ий|ого|ому|им|ем|у|ом)",
+    r"kremlin|кремль",
+    r"moscow|москва",
+    r"kyiv|kiev|киев",
+    r"donbas|донбасс",
+    r"crimea|крым",
+    r"belarus|беларусь|минск",
+    r"war|война|конфликт|спецоперация|svо|военные действия|военная операция",
+    r"sanctions?|санкции|ограничения",
+    r"military|воен(ные|ной|ных|ному|ная)|армия|войска|батальон|полк",
+    r"crypto|биткоин|крипто|блокчейн|цифровой рубль|digital ruble",
+    r"bitcoin|btc|эфир|ethereum|eth|solana|sol|doge|dogecoin",
+    r"nuclear|ядерн(ый|ого|ому|ых|ое|ая)",
+    r"gazprom|роснефть|ростех|rostec",
+    r"nato|нап|организация североатлантического договора"
 ]
 
-# === Трехэтапная фильтрация для России/Украины, СВО и крипторынка ===
-# ЭТАП 1: ПОЗИТИВНАЯ ФИЛЬТРАЦИЯ
-KEYWORDS = [
-    # Геополитика и военные действия
-    r"\b(russia|rus|российск(ая|ое|ий|их)|рф|kremlin|putin|belarus|беларусь)\b",
-    r"\b(ukraine|ukrainian|kiev|kyiv|zelensk(y|yy)|donbas|crimea|kherson|kharkiv|lviv)\b",
-    r"\b(russian invasion|special military operation|SVO|russo-ukrainian war|ukraine conflict)\b",
-    r"\b(russian military|wagner group|prigozhin|separatists|LNR|DNR|annexation)\b",
-    r"\b(ukrainian forces|ATACMS|HIMARS|f-16|patriot system|counteroffensive)\b",
-    r"\b(sanctions (against|on) russia|eu sanctions|price cap|SWIFT ban)\b",
-    r"\b(iaea zaporizhzhia|nuclear plant|nord stream sabotage)\b",
-    
-    # Крипторынок в контексте РФ/Украины
-    r"\b(russia crypto|digital ruble|цифровой рубль|cbr digital assets|garantex exchange)\b",
-    r"\b(ukraine crypto donations|war bonds crypto|kuna exchange|come back alive crypto)\b",
-    r"\b(russian crypto ban|cbr cryptocurrency regulation|rossvyaz crypto block)\b",
-    r"\b(energy crypto mining russia|iran russia crypto|belarus crypto scheme)\b",
-    
-    # Ключевые события и институты
-    r"\b(ministry of defence ru|mod ru|rostec|alrosa|gazprom|rosneft)\b",
-    r"\b(nato russia|finland nato|sweden nato|budapest memorandum)\b",
-    r"\b(mobilization russia|filobank|shadow fleet|parallel imports russia)\b",
-    r"\b(un vote russia|international court justice ukraine|icc putin)\b"
-]
-
-# ЭТАП 2: НЕГАТИВНАЯ ФИЛЬТРАЦИЯ (ЧЁРНЫЙ СПИСОК)
-BLACKLIST = [
-    # Исключение ложных срабатываний для "war"
-    r"\bstar wars\b", r"\bworld of warcraft\b", r"\bwarhammer\b", r"\bwar of the roses\b",
-    
-    # Исключение общих крипто-новостей без связи с РФ/Укр
-    r"\bbitcoin price\b.*\b(analysis|forecast|technical)\b", 
-    r"\bethereum merge\b", r"\bcrypto etf approval\b", r"\bcoinbase earnings\b",
-    
-    # Исключение пандемий без геопривязки
-    r"\bpandemic\b.*\b(flu|h5n1|mpox)\b", r"\bcovid-19\b.*\b(vaccine|variant)\b\s*[^.]*?\b(not|without)\b\s*\b(russia|ukraine)\b",
-    
-    # Исключение военных учений без связи с регионом
-    r"\bmilitary exercise\b.*\b(nato|pacific|china|india)\b", 
-    r"\bdrone show\b", r"\bnuclear safety\b.*\b(japan|fukushima)\b",
-    
-    # Санкции против других стран
-    r"\bsanction[s]?\b.*\b(venezuela|iran|north korea|myanmar|syria|belarus)\b",
-    
-    # Коммерческие дроны
-    r"\bdrone delivery\b.*\b(amazon|google|wing)\b"
-]
-
-# ЭТАП 3: КОНТЕКСТНАЯ ВАЛИДАЦИЯ
-CONTEXT_TERMS = r"\b(russia|ukraine|belarus|kremlin|putin|zelensk(y|yy)?|donbas|crimea|kyiv|kiev|moscow|russian|ukrainian|wagner|rostec|gazprom|LNR|DNR|ukrainian territory)\b"
-CONTEXT_WINDOW = 200  # символов в каждую сторону от ключевого слова
-CRITICAL_TERMS = [
-    r"\b(?:war|attack|strike|sanction[s]?|military|conflict|drone|missile|rocket|bomb|nuclear|bio\w*)\b",
-    r"\bcrypto(?:currency)?\b",
-    r"\b(?:pandemic|virus|vaccine)\b"
-]
-
-def is_relevant(text: str) -> bool:
-    """Трёхэтапная фильтрация новостей"""
+def is_relevant_simple(text: str) -> bool:
+    """Упрощенная проверка на релевантность"""
     text_lower = text.lower()
+    return any(re.search(pattern, text_lower, re.IGNORECASE) for pattern in SIMPLE_KEYWORDS)
+
+def translate_text(text: str) -> str:
+    """Перевод текста на русский с обработкой ошибок"""
+    if not text or len(text.strip()) < 3:
+        return text
     
-    # === ЭТАП 1: ПОЗИТИВНАЯ ФИЛЬТРАЦИЯ ===
-    keyword_matches = []
-    for pattern in KEYWORDS:
-        matches = list(re.finditer(pattern, text_lower, re.IGNORECASE | re.UNICODE))
-        if matches:
-            keyword_matches.extend(matches)
-    
-    if not keyword_matches:
-        return False
-    
-    # === ЭТАП 2: НЕГАТИВНАЯ ФИЛЬТРАЦИЯ ===
-    for pattern in BLACKLIST:
-        if re.search(pattern, text_lower, re.IGNORECASE | re.UNICODE):
-            return False
-    
-    # === ЭТАП 3: КОНТЕКСТНАЯ ВАЛИДАЦИЯ ===
-    critical_compiled = re.compile("|".join(CRITICAL_TERMS), re.IGNORECASE | re.UNICODE)
-    
-    for match in keyword_matches:
-        start, end = match.span()
-        matched_text = match.group()
-        
-        # Пропускаем явно геопривязанные термины (не требуют контекста)
-        if re.search(r"(russia|ukraine|kremlin|putin|zelensk(y|yy)?|donbas|crimea|wagner|rostec)", matched_text, re.IGNORECASE):
-            return True
-        
-        # Проверяем критичность термина
-        if critical_compiled.search(matched_text):
-            # Формируем контекстное окно
-            context_start = max(0, start - CONTEXT_WINDOW)
-            context_end = min(len(text_lower), end + CONTEXT_WINDOW)
-            context_snippet = text_lower[context_start:context_end]
-            
-            # Валидация контекста
-            if re.search(CONTEXT_TERMS, context_snippet, re.IGNORECASE | re.UNICODE):
-                return True
-        else:
-            # Некритичные термины (например, "digital ruble") всегда проходят
-            return True
-    
-    return False
+    try:
+        # Обрезаем слишком длинный текст для перевода
+        text_to_translate = text[:2000] if len(text) > 2000 else text
+        translated = GoogleTranslator(source='auto', target='ru').translate(text_to_translate)
+        return translated
+    except Exception as e:
+        logger.warning(f"Translation error: {e}")
+        return text
 
 # === Вспомогательные функции ===
 def clean_html(raw: str) -> str:
@@ -214,15 +91,6 @@ def clean_html(raw: str) -> str:
     text = html.unescape(text)
     text = re.sub(r'\s+', ' ', text)
     return text.strip()
-
-def translate(text: str) -> str:
-    if not text.strip():
-        return ""
-    try:
-        return GoogleTranslator(source='auto', target='ru').translate(text)
-    except Exception as e:
-        logger.warning(f"GoogleTranslate failed: {e}. Using original text.")
-        return text
 
 def is_article_sent(url: str) -> bool:
     try:
@@ -241,10 +109,13 @@ def mark_article_sent(url: str, title: str):
 
 def send_to_telegram(prefix: str, title: str, lead: str, url: str):
     try:
-        title_ru = translate(title)
-        lead_ru = translate(lead)
+        # Переводим заголовок и описание
+        title_ru = translate_text(title)
+        lead_ru = translate_text(lead)
+        
+        # Формируем сообщение
         message = f"<b>{prefix}</b>: {title_ru}\n\n{lead_ru}\n\nИсточник: {url}"
-
+        
         for ch in CHANNEL_IDS:
             resp = requests.post(
                 f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
@@ -257,15 +128,14 @@ def send_to_telegram(prefix: str, title: str, lead: str, url: str):
                 timeout=10
             )
             if resp.status_code == 200:
-                logger.info(f"📤 Sent: {title[:60]}...")
+                logger.info(f"📤 Sent: {title_ru[:60]}...")
             else:
                 logger.error(f"❌ TG error: {resp.status_code} {resp.text}")
     except Exception as e:
         logger.exception(f"Telegram send failed: {e}")
 
-# === Специализированные функции для парсинга ===
 def fetch_rss_feed(url):
-    """Стандартное получение RSS-ленты"""
+    """Получение RSS-ленты"""
     try:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
@@ -279,28 +149,8 @@ def fetch_rss_feed(url):
         logger.error(f"RSS fetch error for {url}: {e}")
         return feedparser.FeedParserDict(entries=[])
 
-def fetch_rss_with_fallback(url):
-    """Получение RSS с резервным вариантом при ошибке"""
-    try:
-        return fetch_rss_feed(url)
-    except Exception as e:
-        logger.warning(f"RSS fallback error for {url}: {e}")
-        return feedparser.FeedParserDict(entries=[])
-
-def fetch_with_cloudscraper(url):
-    """Обход защиты Cloudflare с помощью cloudscraper"""
-    try:
-        scraper = cloudscraper.create_scraper()
-        response = scraper.get(url, timeout=15)
-        response.raise_for_status()
-        return feedparser.parse(response.content)
-    except Exception as e:
-        logger.error(f"Cloudscraper error for {url}: {e}")
-        return feedparser.FeedParserDict(entries=[])
-
-def parse_johns_hopkins():
-    """Парсинг сайта Johns Hopkins Center for Health Security"""
-    url = "https://www.centerforhealthsecurity.org/news/"
+def parse_html_feed(url, selectors):
+    """Универсальный парсер HTML"""
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
         response = requests.get(url, headers=headers, timeout=15)
@@ -308,448 +158,88 @@ def parse_johns_hopkins():
         soup = BeautifulSoup(response.content, 'html.parser')
         
         entries = []
-        # Поиск статей на странице
-        for article in soup.select('.resource-item, .news-item, .list-item'):
-            title_elem = article.select_one('h3 a, h2 a, .title a')
+        for item in soup.select(selectors['container']):
+            title_elem = item.select_one(selectors['title'])
             if not title_elem:
                 continue
                 
             title = title_elem.get_text().strip()
-            link = title_elem['href']
-            # Ensure absolute URL
+            link = title_elem['href'] if 'href' in title_elem.attrs else ""
             if link.startswith('/'):
-                link = 'https://www.centerforhealthsecurity.org' + link
+                link = '/'.join(url.split('/')[:3]) + link
             
-            desc_elem = article.select_one('.summary, .excerpt, p')
+            desc_elem = item.select_one(selectors['desc'])
             desc = desc_elem.get_text().strip() if desc_elem else ""
             
-            date_elem = article.select_one('.date, time')
-            pub_date_str = date_elem.get_text().strip() if date_elem else time.strftime("%a, %d %b %Y %H:%M:%S +0000", time.gmtime())
-            # Попробуем распарсить дату, если возможно
-            pub_date_parsed = None
-            try:
-                # Пример формата даты на сайте: "May 15, 2024"
-                pub_date_parsed = datetime.strptime(pub_date_str, "%B %d, %Y").replace(tzinfo=timezone.utc)
-            except ValueError:
-                try:
-                    # Пробуем другой формат, если не подошёл
-                    pub_date_parsed = datetime.strptime(pub_date_str, "%b %d, %Y").replace(tzinfo=timezone.utc)
-                except ValueError:
-                    # Если не получилось, используем текущее время
-                    pub_date_parsed = datetime.now(timezone.utc)
+            date_elem = item.select_one(selectors['date'])
+            pub_date_str = date_elem.get_text().strip() if date_elem else datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S +0000")
             
             entries.append({
                 'title': title,
                 'link': link,
                 'summary': desc,
-                'published': pub_date_str,
-                'published_parsed': pub_date_parsed.timetuple() if pub_date_parsed else None
+                'published': pub_date_str
             })
         
         feed = feedparser.FeedParserDict()
         feed.entries = entries
         return feed
     except Exception as e:
-        logger.error(f"Johns Hopkins parsing error: {e}")
+        logger.error(f"HTML parsing error for {url}: {e}")
         return feedparser.FeedParserDict(entries=[])
 
-def parse_dni_global_trends():
-    """Парсинг сайта DNI Global Trends (обработка ошибки)"""
-    url = "https://www.dni.gov/index.php/gt2040-home"
-    try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-        response = requests.get(url, headers=headers, timeout=15)
-        response.raise_for_status()
-        content = response.text
-        # Проверяем на наличие ошибки
-        if "Reference #" in content and ("edgesuite.net" in content or "Akamai" in content):
-             logger.warning(f"DNI site returned error page for {url}")
-             return feedparser.FeedParserDict(entries=[])
-        
-        soup = BeautifulSoup(response.content, 'html.parser')
-        
-        entries = []
-        # Поиск отчетов и новостей - уточнить селекторы на реальном сайте
-        # На текущем сайте структура не позволяет легко извлечь статьи
-        # Для примера добавим одну фиктивную запись, если страница доступна
-        # В реальности нужно анализировать структуру страницы
-        title = "Global Trends 2040 Report"
-        link = url
-        desc = "DNI Global Trends 2040 report analysis."
-        pub_date_str = time.strftime("%a, %d %b %Y %H:%M:%S +0000", time.gmtime())
-        
-        entries.append({
-            'title': title,
-            'link': link,
-            'summary': desc,
-            'published': pub_date_str
-        })
-        
-        feed = feedparser.FeedParserDict()
-        feed.entries = entries
-        return feed
-    except requests.exceptions.RequestException as e:
-        logger.error(f"DNI Global Trends network error: {e}")
-        return feedparser.FeedParserDict(entries=[])
-    except Exception as e:
-        logger.error(f"DNI Global Trends parsing error: {e}")
-        return feedparser.FeedParserDict(entries=[])
-
-def parse_reuters_institute():
-    """Парсинг сайта Reuters Institute (новый URL)"""
-    url = "https://reutersinstitute.politics.ox.ac.uk/research" # Предполагаемый URL для публикаций
-    # Альтернатива: "https://reutersinstitute.politics.ox.ac.uk/blogs" или "https://reutersinstitute.politics.ox.ac.uk/digital-news-report"
-    # Нужно уточнить структуру сайта
-    try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-        response = requests.get(url, headers=headers, timeout=15)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.content, 'html.parser')
-        
-        entries = []
-        # Пример селектора - может отличаться
-        # Поиск статей на странице, например, по .views-row или .publication или .blog-post
-        for article in soup.select('.views-row, .publication, .blog-post, .node-teaser'): # Уточнить селектор
-            title_elem = article.select_one('h2 a, h3 a, .title a')
-            if not title_elem:
-                continue # Пропускаем, если нет заголовка
-                
-            title = title_elem.get_text().strip()
-            link = title_elem['href']
-            # Ensure absolute URL
-            if link.startswith('/'):
-                link = 'https://reutersinstitute.politics.ox.ac.uk' + link
-            
-            desc_elem = article.select_one('.field-content p, .summary, .excerpt')
-            desc = desc_elem.get_text().strip() if desc_elem else ""
-            
-            date_elem = article.select_one('.date, time, .submitted') # Уточнить селектор даты
-            pub_date_str = date_elem.get_text().strip() if date_elem else time.strftime("%a, %d %b %Y %H:%M:%S +0000", time.gmtime())
-            # Попробуем распарсить дату, если возможно
-            pub_date_parsed = None
-            try:
-                # Пример формата: "15 May 2024" или "May 15, 2024"
-                pub_date_parsed = datetime.strptime(pub_date_str, "%d %B %Y").replace(tzinfo=timezone.utc)
-            except ValueError:
-                try:
-                    pub_date_parsed = datetime.strptime(pub_date_str, "%B %d, %Y").replace(tzinfo=timezone.utc)
-                except ValueError:
-                    try:
-                        pub_date_parsed = datetime.strptime(pub_date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-                    except ValueError:
-                        pub_date_parsed = datetime.now(timezone.utc)
-            
-            # Filter for relevant topics (пример)
-            if any(keyword in title.lower() or keyword in desc.lower() 
-                   for keyword in ['russia', 'ukraine', 'media', 'journalism', 'disinformation', 'news', 'social media', 'trust']):
-                entries.append({
-                    'title': title,
-                    'link': link,
-                    'summary': desc,
-                    'published': pub_date_str,
-                    'published_parsed': pub_date_parsed.timetuple() if pub_date_parsed else None
-                })
-        
-        feed = feedparser.FeedParserDict()
-        feed.entries = entries
-        return feed
-    except Exception as e:
-        logger.error(f"Reuters Institute parsing error: {e}")
-        return feedparser.FeedParserDict(entries=[])
-
-def parse_carnegie():
-    """Парсинг сайта Carnegie Endowment (исправлен)"""
-    url = "https://carnegieendowment.org/publications/"
-    try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-        response = requests.get(url, headers=headers, timeout=15)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.content, 'html.parser')
-        
-        entries = []
-        # Поиск публикаций - уточнён селектор
-        # Структура может быть .views-view-grid, .views-row, .views-row-inner
-        for article_container in soup.select('.views-row'): # Основной контейнер
-            title_elem = article_container.select_one('.views-field-title a')
-            if not title_elem:
-                continue # Пропускаем, если нет заголовка
-                
-            title = title_elem.get_text().strip()
-            link = title_elem['href']
-            # Ensure absolute URL
-            if link.startswith('/'):
-                link = 'https://carnegieendowment.org' + link
-            
-            # Попробуем найти краткое описание
-            desc_elem = article_container.select_one('.views-field-field-pub-excerpt .field-content')
-            desc = desc_elem.get_text().strip() if desc_elem else ""
-            
-            # Попробуем найти дату
-            date_elem = article_container.select_one('.views-field-field-pub-date .field-content')
-            pub_date_str = date_elem.get_text().strip() if date_elem else time.strftime("%a, %d %b %Y %H:%M:%S +0000", time.gmtime())
-            # Попробуем распарсить дату, если возможно
-            pub_date_parsed = None
-            try:
-                pub_date_parsed = datetime.strptime(pub_date_str, "%B %d, %Y").replace(tzinfo=timezone.utc)
-            except ValueError:
-                try:
-                    pub_date_parsed = datetime.strptime(pub_date_str, "%b %d, %Y").replace(tzinfo=timezone.utc)
-                except ValueError:
-                    pub_date_parsed = datetime.now(timezone.utc)
-            
-            # Filter for relevant topics
-            if any(keyword in title.lower() or keyword in desc.lower() 
-                   for keyword in ['russia', 'ukraine', 'moscow', 'kremlin', 'putin', 'eastern europe', 'eurasia', 'sanction', 'economy', 'security', 'diplomacy']):
-                entries.append({
-                    'title': title,
-                    'link': link,
-                    'summary': desc,
-                    'published': pub_date_str,
-                    'published_parsed': pub_date_parsed.timetuple() if pub_date_parsed else None
-                })
-        
-        feed = feedparser.FeedParserDict()
-        feed.entries = entries
-        return feed
-    except Exception as e:
-        logger.error(f"Carnegie parsing error: {e}")
-        return feedparser.FeedParserDict(entries=[])
-
-def parse_cfr():
-    """Парсинг сайта CFR (исправлен)"""
-    url = "https://www.cfr.org/publications"
-    try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-        response = requests.get(url, headers=headers, timeout=15)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.content, 'html.parser')
-        
-        entries = []
-        # Поиск публикаций - уточнён селектор
-        # Структура может быть .teaser--publication, .views-row, .publication-item
-        for article in soup.select('.teaser--publication, .views-row, .publication-item'): # Попробуем несколько
-            title_elem = article.select_one('.teaser__title a, .field-content h3 a, h3 a')
-            if not title_elem:
-                continue # Пропускаем, если нет заголовка
-                
-            title = title_elem.get_text().strip()
-            link = title_elem['href']
-            # Ensure absolute URL
-            if link.startswith('/'):
-                link = 'https://www.cfr.org' + link
-            
-            desc_elem = article.select_one('.teaser__dek, .field-content .field-name-body, .views-field-body')
-            desc = desc_elem.get_text().strip() if desc_elem else ""
-            
-            date_elem = article.select_one('.teaser__date, .date-created, .submitted')
-            pub_date_str = date_elem.get_text().strip() if date_elem else time.strftime("%a, %d %b %Y %H:%M:%S +0000", time.gmtime())
-            # Попробуем распарсить дату, если возможно
-            pub_date_parsed = None
-            try:
-                pub_date_parsed = datetime.strptime(pub_date_str, "%B %d, %Y").replace(tzinfo=timezone.utc)
-            except ValueError:
-                try:
-                    pub_date_parsed = datetime.strptime(pub_date_str, "%b %d, %Y").replace(tzinfo=timezone.utc)
-                except ValueError:
-                    pub_date_parsed = datetime.now(timezone.utc)
-            
-            # Filter for relevant topics
-            if any(keyword in title.lower() or keyword in desc.lower() 
-                   for keyword in ['russia', 'ukraine', 'moscow', 'kremlin', 'putin', 'eastern europe', 'eurasia', 'sanction', 'economy', 'security', 'diplomacy', 'geopolitics']):
-                entries.append({
-                    'title': title,
-                    'link': link,
-                    'summary': desc,
-                    'published': pub_date_str,
-                    'published_parsed': pub_date_parsed.timetuple() if pub_date_parsed else None
-                })
-        
-        feed = feedparser.FeedParserDict()
-        feed.entries = entries
-        return feed
-    except Exception as e:
-        logger.error(f"CFR parsing error: {e}")
-        return feedparser.FeedParserDict(entries=[])
-
-def parse_future_timeline():
-    """Парсинг сайта Future Timeline (исправлен)"""
-    url = "http://www.futuretimeline.net/"
-    try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-        response = requests.get(url, headers=headers, timeout=15)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.content, 'html.parser')
-        
-        entries = []
-        # Поиск событий на главной странице или в блоге
-        # Структура сайта: .timeline-item, .blog-post, .event
-        # Скорее всего, .timeline-item или .event
-        for item in soup.select('.timeline-item, .event'): # Уточнить селектор
-            title_elem = item.select_one('h2 a, h3 a, .title a, .event-title a')
-            if not title_elem:
-                continue # Пропускаем, если нет заголовка
-                
-            title = title_elem.get_text().strip()
-            link = title_elem['href']
-            # Ensure absolute URL
-            if link.startswith('/'):
-                link = 'http://www.futuretimeline.net' + link
-            elif link.startswith('..'):
-                 link = 'http://www.futuretimeline.net/' + link.lstrip('../')
-            elif not link.startswith('http'):
-                link = 'http://www.futuretimeline.net/' + link.lstrip('/')
-            
-            desc_elem = item.select_one('p, .summary, .content, .event-description')
-            desc = desc_elem.get_text().strip() if desc_elem else title # Используем заголовок, если нет описания
-            
-            # Дата может быть в заголовке или отдельно
-            # Пример: <div class="event-date">2025-01-01</div> или <h3>2025-01-01: Some Event</h3>
-            date_match = re.search(r'(\d{4}-\d{2}-\d{2}|\d{2}/\d{2}/\d{4}|\d{4})', title) # Пример поиска даты из заголовка
-            pub_date_str = date_match.group(0) if date_match else time.strftime("%a, %d %b %Y %H:%M:%S +0000", time.gmtime())
-            # Попробуем распарсить дату, если возможно
-            pub_date_parsed = None
-            try:
-                if '-' in pub_date_str and len(pub_date_str) == 10:
-                    pub_date_parsed = datetime.strptime(pub_date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-                elif '/' in pub_date_str:
-                    pub_date_parsed = datetime.strptime(pub_date_str, "%m/%d/%Y").replace(tzinfo=timezone.utc)
-                else:
-                    # Если это просто год, ставим 1 января
-                    pub_date_parsed = datetime.strptime(pub_date_str, "%Y").replace(tzinfo=timezone.utc, month=1, day=1)
-            except ValueError:
-                pub_date_parsed = datetime.now(timezone.utc)
-            
-            # Filter for relevant topics (например, связанные с безопасностью, технологиями)
-            if any(keyword in title.lower() or keyword in desc.lower() 
-                   for keyword in ['security', 'technology', 'geopolitical', 'war', 'conflict', 'pandemic', 'virus', 'biosecurity', 'crypto', 'russia', 'ukraine']):
-                entries.append({
-                    'title': title,
-                    'link': link,
-                    'summary': desc,
-                    'published': pub_date_str,
-                    'published_parsed': pub_date_parsed.timetuple() if pub_date_parsed else None
-                })
-        
-        feed = feedparser.FeedParserDict()
-        feed.entries = entries
-        return feed
-    except Exception as e:
-        logger.error(f"Future Timeline parsing error: {e}")
-        return feedparser.FeedParserDict(entries=[])
-
-def parse_bruegel():
-    """Парсинг сайта Bruegel"""
-    url = "https://www.bruegel.org/analysis"
-    try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-        response = requests.get(url, headers=headers, timeout=15)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.content, 'html.parser')
-        
-        entries = []
-        # Поиск статей
-        for article in soup.select('.post-item, .blog-item, article'): # Уточнить селектор
-            title_elem = article.select_one('h3 a, h2 a, .title a')
-            if not title_elem:
-                continue # Пропускаем, если нет заголовка
-                
-            title = title_elem.get_text().strip()
-            link = title_elem['href']
-            # Ensure absolute URL
-            if not link.startswith('http'):
-                link = 'https://www.bruegel.org' + link
-            
-            desc_elem = article.select_one('.excerpt, .summary, .description, p')
-            desc = desc_elem.get_text().strip() if desc_elem else ""
-            
-            date_elem = article.select_one('.date, time')
-            pub_date_str = date_elem.get_text().strip() if date_elem else time.strftime("%a, %d %b %Y %H:%M:%S +0000", time.gmtime())
-            # Попробуем распарсить дату, если возможно
-            pub_date_parsed = None
-            try:
-                pub_date_parsed = datetime.strptime(pub_date_str, "%B %d, %Y").replace(tzinfo=timezone.utc)
-            except ValueError:
-                try:
-                    pub_date_parsed = datetime.strptime(pub_date_str, "%b %d, %Y").replace(tzinfo=timezone.utc)
-                except ValueError:
-                    pub_date_parsed = datetime.now(timezone.utc)
-            
-            # Filter for relevant topics
-            if any(keyword in title.lower() or keyword in desc.lower() 
-                   for keyword in ['russia', 'ukraine', 'sanctions', 'energy security', 'europe', 'security', 'geopolitics', 'defense', 'economy']):
-                entries.append({
-                    'title': title,
-                    'link': link,
-                    'summary': desc,
-                    'published': pub_date_str,
-                    'published_parsed': pub_date_parsed.timetuple() if pub_date_parsed else None
-                })
-        
-        feed = feedparser.FeedParserDict()
-        feed.entries = entries
-        return feed
-    except Exception as e:
-        logger.error(f"Bruegel parsing error: {e}")
-        return feedparser.FeedParserDict(entries=[])
+# === Источники (самые надежные) ===
+SOURCES = [
+    # 1. RAND Corporation
+    {"name": "RAND", "url": "https://www.rand.org/rss/recent.xml", "method": "rss"},
+    
+    # 2. World Economic Forum
+    {"name": "WEF", "url": "https://www.weforum.org/agenda/archive/feed", "method": "rss"},
+    
+    # 3. CSIS
+    {"name": "CSIS", "url": "https://www.csis.org/rss.xml", "method": "rss"},
+    
+    # 4. Atlantic Council
+    {"name": "Atlantic Council", "url": "https://www.atlanticcouncil.org/feed/", "method": "rss"},
+    
+    # 5. Chatham House
+    {"name": "Chatham House", "url": "https://www.chathamhouse.org/feed", "method": "rss"},
+    
+    # 6. The Economist
+    {"name": "Economist", "url": "https://www.economist.com/the-world-this-week/rss.xml", "method": "rss"},
+    
+    # 7. Bloomberg
+    {"name": "Bloomberg", "url": "https://feeds.bloomberg.com/markets/news.rss", "method": "rss"},
+    
+    # 8. Foreign Affairs
+    {"name": "Foreign Affairs", "url": "https://www.foreignaffairs.com/rss.xml", "method": "rss"},
+    
+    # 9. CFR
+    {"name": "CFR", "url": "https://www.cfr.org/rss.xml", "method": "rss"},
+    
+    # 10. Carnegie Endowment
+    {"name": "Carnegie", "url": "https://carnegieendowment.org/publications/feed", "method": "rss"},
+    
+    # 11. Bruegel
+    {"name": "Bruegel", "url": "https://www.bruegel.org/feed", "method": "rss"}
+]
 
 def fetch_and_process():
     logger.info("📡 Checking feeds...")
-    cutoff_date = datetime.now(timezone.utc) - timedelta(days=7)
+    cutoff_date = datetime.now(timezone.utc) - timedelta(days=3)  # Берем новости за последние 3 дня
     
     for src in SOURCES:
         try:
-            logger.info(f"Fetching feed from {src['name']} (method: {src.get('method', 'unknown')})")
+            logger.info(f"Fetching feed from {src['name']} (method: {src['method']})")
             feed = None
             
-            # Определение метода получения данных
-            if src.get('method') == 'rss':
-                feed = fetch_rss_feed(src['rss'])
-            elif src.get('method') == 'rss_with_fallback':
-                feed = fetch_rss_with_fallback(src['rss'])
-            elif src.get('method') == 'cloudscraper':
-                feed = fetch_with_cloudscraper(src['rss'])
-            elif src.get('method') == 'html_parser':
-                if src['name'] == "Johns Hopkins":
-                    feed = parse_johns_hopkins()
-                elif src['name'] == "DNI Global Trends":
-                    feed = parse_dni_global_trends()
-                elif src['name'] == "Reuters Institute":
-                    feed = parse_reuters_institute()
-                elif src['name'] == "Carnegie":
-                    feed = parse_carnegie()
-                elif src['name'] == "CFR":
-                    feed = parse_cfr()
-                elif src['name'] == "Future Timeline":
-                    feed = parse_future_timeline()
-                elif src['name'] == "Bruegel":
-                    feed = parse_bruegel()
-                else:
-                    feed = feedparser.FeedParserDict(entries=[])
+            # Получение данных
+            if src['method'] == 'rss':
+                feed = fetch_rss_feed(src['url'])
+            elif src['method'] == 'html' and 'selectors' in src:
+                feed = parse_html_feed(src['url'], src['selectors'])
             else:
-                if 'rss' in src:
-                    feed = fetch_rss_feed(src['rss'])
-                elif 'url' in src:
-                    # Default to html parser if no method specified but url exists
-                    if src['name'] in ["Johns Hopkins", "DNI Global Trends", "Reuters Institute", "Carnegie", "CFR", "Future Timeline", "Bruegel"]:
-                        if src['name'] == "Johns Hopkins":
-                            feed = parse_johns_hopkins()
-                        elif src['name'] == "DNI Global Trends":
-                            feed = parse_dni_global_trends()
-                        elif src['name'] == "Reuters Institute":
-                            feed = parse_reuters_institute()
-                        elif src['name'] == "Carnegie":
-                            feed = parse_carnegie()
-                        elif src['name'] == "CFR":
-                            feed = parse_cfr()
-                        elif src['name'] == "Future Timeline":
-                            feed = parse_future_timeline()
-                        elif src['name'] == "Bruegel":
-                            feed = parse_bruegel()
-                    else:
-                        feed = fetch_rss_feed(src['url'])  # Try as RSS
-                else:
-                    logger.warning(f"No valid URL or RSS for source: {src['name']}")
-                    continue
+                feed = fetch_rss_feed(src['url'])
             
             if not hasattr(feed, 'entries') or not feed.entries:
                 logger.warning(f"❌ Empty or invalid feed from {src['name']}")
@@ -764,24 +254,15 @@ def fetch_and_process():
                     pub_date = datetime(*entry.updated_parsed[:6], tzinfo=timezone.utc)
                 elif hasattr(entry, 'published') and entry.published:
                     try:
-                        # Пробуем распарсить форматы, которые могут быть в RSS или HTML-парсере
                         pub_date = datetime.strptime(entry.published, '%a, %d %b %Y %H:%M:%S %z').astimezone(timezone.utc)
                     except ValueError:
                         try:
                             pub_date = datetime.strptime(entry.published, '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone.utc)
                         except ValueError:
-                            try:
-                                pub_date = datetime.strptime(entry.published, '%Y-%m-%dT%H:%M:%S%z').astimezone(timezone.utc)
-                            except ValueError:
-                                try:
-                                    pub_date = datetime.strptime(entry.published, '%Y-%m-%d').replace(tzinfo=timezone.utc)
-                                except ValueError:
-                                    logger.warning(f"Could not parse date: {entry.get('published', 'N/A')}")
-                                    pub_date = datetime.now(timezone.utc) # Если не получилось, используем текущее время
+                            pub_date = datetime.now(timezone.utc)
                 
-                # Пропуск старых статей (старше 7 дней) - ОСНОВНАЯ ПРОВЕРКА НА СВЕЖЕСТЬ
-                if pub_date is not None and pub_date < cutoff_date:
-                    logger.debug(f"Skipping old article: {entry.get('title', 'N/A')} - {pub_date}")
+                # Пропуск старых статей
+                if pub_date and pub_date < cutoff_date:
                     continue
                 
                 url = entry.get("link", "").strip()
@@ -789,21 +270,22 @@ def fetch_and_process():
                     continue
 
                 title = entry.get("title", "").strip()
-                desc = (entry.get("summary") or entry.get("description") or "").strip()
+                desc = (entry.get("summary") or entry.get("description", "")).strip()
                 desc = clean_html(desc)
                 if not title or not desc:
                     continue
 
-                if not is_relevant(title + " " + desc):
+                # Упрощенная проверка на релевантность
+                if not is_relevant_simple(title + " " + desc):
                     continue
 
                 lead = desc.split("\n")[0].split(". ")[0].strip()
                 if not lead:
-                    lead = desc[:150] + "..." if len(desc) > 150 else desc
+                    lead = desc[:120] + "..." if len(desc) > 120 else desc
                 
                 send_to_telegram(src["name"], title, lead, url)
                 mark_article_sent(url, title)
-                time.sleep(0.5) # Задержка между отправками
+                time.sleep(0.5)  # Короткая задержка между отправками
 
         except Exception as e:
             logger.error(f"❌ Error on {src['name']}: {e}")
@@ -812,8 +294,12 @@ def fetch_and_process():
 
 # === Запуск ===
 if __name__ == "__main__":
-    logger.info("🚀 Starting Russia Monitor Bot (Background Worker) with all 19 sources...")
+    logger.info("🚀 Starting Russia Monitor Bot (Russian translation version)...")
+    logger.info("🔍 Using simple keyword filters for Russia/Ukraine topics")
+    logger.info(f"⏳ Checking last 3 days of news from {len(SOURCES)} sources")
+    logger.info("🇷🇺 All messages will be translated to Russian")
+    
     while True:
         fetch_and_process()
-        logger.info("💤 Sleeping for 10 минутэз...")
+        logger.info("💤 Sleeping for 10 minutes...")
         time.sleep(10 * 60)
