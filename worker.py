@@ -60,7 +60,18 @@ SIMPLE_KEYWORDS = [
     r"ruble|рубль|digital ruble|цифровой рубль",
     r"nuclear|ядерн(ый|ого|ому|ых|ое)",
     r"missile|ракет(а|ы|ный|ой)",
-    r"drone|дрон|беспилотник"
+    r"drone|дрон|беспилотник",
+    r"geopolitics?|геополитик(а|и|еский)",
+    r"sanction|санкци(я|и|й)",
+    r"energy|энерг(ия|етик|етика)",
+    r"finance|финанс(ы|овый|ирование)",
+    r"economy|экономик(а|и)",
+    r"climate|климат",
+    r"cop|cop30|конференция по климату",
+    r"ai|искусственн(ый|ого|ому|ые|ый|ого|ому)",
+    r"china|китай",
+    r"india|индия",
+    r"nato|н а т о"
 ]
 
 def is_relevant_simple(text: str) -> bool:
@@ -80,17 +91,12 @@ def safe_translate(text: str) -> str:
     except Exception as e:
         logger.warning(f"GoogleTranslate failed: {e}. Trying Yandex.")
         try:
-            # Резервный вариант: Yandex Translate
-            translator = YandexTranslator(api_key=os.getenv("YANDEX_API_KEY"))  # Если есть API ключ
+            # Резервный вариант: Yandex Translate (бесплатный)
+            translator = YandexTranslator(source='auto', target='ru')
             return translator.translate(text)
-        except:
-            try:
-                # Еще один резервный вариант: бесплатный Yandex
-                translator = YandexTranslator(source='auto', target='ru')
-                return translator.translate(text)
-            except Exception as e2:
-                logger.warning(f"YandexTranslate also failed: {e2}. Using original text.")
-                return text
+        except Exception as e2:
+            logger.warning(f"YandexTranslate also failed: {e2}. Using original text.")
+            return text
 
 # === Вспомогательные функции ===
 def clean_html(raw: str) -> str:
@@ -197,14 +203,14 @@ def parse_html_feed(url, selectors):
 
 # === Источники (самые надежные) ===
 SOURCES = [
-    # 1. Good Judgment
+    # 1. World Economic Forum (Основной источник)
+    {"name": "WEF", "url": "https://www.weforum.org/agenda/archive/feed", "method": "rss"},
+    
+    # 2. Good Judgment
     {"name": "Good Judgment", "url": "https://goodjudgment.com/feed/", "method": "rss"},
     
-    # 2. RAND Corporation
+    # 3. RAND Corporation
     {"name": "RAND", "url": "https://www.rand.org/rss/recent.xml", "method": "rss"},
-    
-    # 3. World Economic Forum
-    {"name": "WEF", "url": "https://www.weforum.org/agenda/archive/feed", "method": "rss"},
     
     # 4. CSIS
     {"name": "CSIS", "url": "https://www.csis.org/rss.xml", "method": "rss"},
@@ -320,7 +326,7 @@ def fetch_and_process():
 # === Запуск ===
 if __name__ == "__main__":
     logger.info("🚀 Starting Russia Monitor Bot with translation...")
-    logger.info("🔍 Using simple keyword filters for Russia/Ukraine and crypto topics")
+    logger.info("🔍 Using simple keyword filters for Russia/Ukraine and global topics")
     logger.info(f"✅ Sending translations to channels: {', '.join(CHANNEL_IDS)}")
     logger.info(f"⏳ Checking last 3 days of news from {len(SOURCES)} sources")
     
