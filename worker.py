@@ -362,4 +362,4 @@ if __name__ == "__main__":
     while True:
         fetch_and_process()
         logger.info("💤 Sleeping for 10 minutes...")
-        time.sleep(20 * 60)
+        time.sleep(30 * 60)
